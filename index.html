@@ -156,6 +156,7 @@
 <header>
   <h1>Capti Tournoi</h1>
   <span id="conn" class="badge wait">Chargement…</span>
+  <a href="controle.html" style="color:var(--mut)">🎛 Contrôle</a>
   <span id="user"></span>
 </header>
 <div id="bar" class="bar"></div>
@@ -178,18 +179,18 @@
 import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-} from "./firebase.js?v=5b8af9a8";
-import { h, fill, fallbackImg } from "./dom.js?v=5b8af9a8";
+} from "./firebase.js?v=307898c9";
+import { h, fill, fallbackImg } from "./dom.js?v=307898c9";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
   mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, matchLogos, retarget, rawUrl,
-} from "./logic.js?v=5b8af9a8";
-import { readScheduleFile } from "./import-file.js?v=5b8af9a8";
-import { loadTree, addToCache, publishImage, deleteImage, renameImage, testToken } from "./galerie.js?v=5b8af9a8";
-import { graphiques } from "./config.js?v=5b8af9a8";
-import { TEAMS, SPONSORS } from "./seed.js?v=5b8af9a8";
+} from "./logic.js?v=307898c9";
+import { readScheduleFile } from "./import-file.js?v=307898c9";
+import { loadTree, addToCache, publishImage, deleteImage, renameImage, testToken } from "./galerie.js?v=307898c9";
+import { graphiques } from "./config.js?v=307898c9";
+import { TEAMS, SPONSORS } from "./seed.js?v=307898c9";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};

@@ -366,7 +366,7 @@ assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glac
 assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
 
 /* ---------- Galerie et envoi de logos ---------- */
-import { galleryItems, galleryRank, safeFileName, keepFileName, matchLogos, retarget, contentsDelete, contentsPut, githubError } from "./logic.js";
+import { galleryItems, galleryRank, safeFileName, keepFileName, matchLogos, retarget, commande, contentsDelete, contentsPut, githubError } from "./logic.js";
 
 const tree = [
   { path: "graphiques/logos/Express.png", type: "blob" }, { path: "graphiques/logos/PredateursForillon.png", type: "blob" },
@@ -434,3 +434,16 @@ console.log("ok matchLogos");
 const rt = retarget({ t1: { teams: { a: { logo: "old" }, b: { logo: "x" } }, sponsors: { s: { logo: "old" } } }, t2: { teams: { c: { logo: "old" } } } }, { teams: { g: { logo: "old" } } }, "old", "new");
 assert.deepEqual(rt, { "public/tournois/t1/teams/a/logo": "new", "public/tournois/t1/sponsors/s/logo": "new", "public/tournois/t2/teams/c/logo": "new", "public/lib/teams/g/logo": "new" });
 console.log("ok retarget");
+
+// Commandes de controle (Stream Deck / page de controle).
+const cp = { matches: { a: { num: 1, glace: 1, heure: "10:00", awayScore: 2 }, b: { num: 2, glace: 1, heure: "11:00" }, c: { num: 3, glace: 1, heure: "12:00" } }, glaces: { 1: { live: "a", next: "b" } } };
+assert.deepEqual(commande(cp, 1, "next"), { "glaces/1/next": "c" });
+assert.deepEqual(commande(cp, 1, "prev"), { "glaces/1/next": "a" });
+assert.deepEqual(commande(cp, 1, "live"), { "glaces/1/live": "b", "glaces/1/next": "c" });
+assert.deepEqual(commande(cp, 1, "away_plus"), { "matches/a/awayScore": 3 });
+assert.deepEqual(commande(cp, 1, "home_moins"), { "matches/a/homeScore": 0 }); // jamais sous zero
+assert.deepEqual(commande(cp, 1, "away_couleur"), { "matches/a/awayMode": "Primary" }); // visiteur : Secondary par defaut
+assert.deepEqual(commande(cp, 1, "home_couleur"), { "matches/a/homeMode": "Secondary" });
+assert.equal(commande(cp, 2, "live"), null);
+assert.equal(commande(cp, 1, "nimporte"), null);
+console.log("ok commande");

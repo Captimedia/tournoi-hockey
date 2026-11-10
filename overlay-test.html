@@ -26,8 +26,8 @@
 <div class="bar" id="bar"></div>
 <div class="grid" id="grid"></div>
 <script type="module">
-import { db, ref, onValue } from "./firebase.js?v=5b8af9a8";
-import { h, fill } from "./dom.js?v=5b8af9a8";
+import { db, ref, onValue } from "./firebase.js?v=307898c9";
+import { h, fill } from "./dom.js?v=307898c9";
 
 const p = new URLSearchParams(location.search);
 const st = { glace: p.get("glace") === "2" ? "2" : "1", tournoi: p.get("tournoi") ?? "", demo: p.get("demo") === "1", bg: "damier", liste: {} };

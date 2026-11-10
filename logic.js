@@ -23,6 +23,26 @@ export const neighbor = (list, id, delta) => {
 // Pour Valider : le match apres `id`, ou null s'il n'y en a plus.
 export const following = (list, id) => list[list.findIndex((m) => m.id === id) + 1]?.id ?? null;
 
+// Commandes de controle (page de controle, Stream Deck) -> mises a jour relatives au tournoi (chemin -> valeur), ou null.
+// next / prev : choisit le prochain match ; live : Valider ; away_plus / away_moins / home_plus / home_moins : pointage du match en cours ;
+// away_couleur / home_couleur : bascule Primary / Secondary du match en cours. La meme logique est copiee dans Diffusion Tournoi de Hockey/StreamDeck.js.
+export const commande = (pub, g, cmd) => {
+  const gl = pub.glaces?.[g] ?? {};
+  const list = sortMatches(pub.matches, g);
+  const gp = `glaces/${g}`;
+  if (cmd === "next" || cmd === "prev") return { [`${gp}/next`]: neighbor(list, gl.next, cmd === "next" ? 1 : -1) };
+  if (cmd === "live") return gl.next ? { [`${gp}/live`]: gl.next, [`${gp}/next`]: following(list, gl.next) } : null;
+  const m = pub.matches?.[gl.live];
+  const sc = /^(away|home)_(plus|moins)$/.exec(cmd);
+  if (sc && m) return { [`matches/${gl.live}/${sc[1]}Score`]: Math.max(0, (m[`${sc[1]}Score`] ?? 0) + (sc[2] === "plus" ? 1 : -1)) };
+  const co = /^(away|home)_couleur$/.exec(cmd);
+  if (co && m) {
+    const mode = m[`${co[1]}Mode`] ?? (co[1] === "away" ? "Secondary" : "Primary");
+    return { [`matches/${gl.live}/${co[1]}Mode`]: mode === "Primary" ? "Secondary" : "Primary" };
+  }
+  return null;
+};
+
 export const statut = (list, liveId, id) => {
   if (id === liveId) return "Live";
   const l = list.findIndex((m) => m.id === liveId);

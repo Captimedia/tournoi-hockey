@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contrôle des glaces</title>
+<style>
+  :root { --bg: #0b1220; --card: #111a2e; --bd: #1f2a44; --tx: #e5e7eb; --mut: #94a3b8; --ac: #3b82f6; --ok: #22c55e; --bad: #ef4444; }
+  body { margin: 0; background: var(--bg); color: var(--tx); font: 16px system-ui, sans-serif; }
+  header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--bd); }
+  h1 { font-size: 18px; margin: 0; flex: 1; }
+  button, a.b { background: var(--card); color: var(--tx); border: 1px solid var(--bd); border-radius: 12px; padding: 14px 10px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; text-align: center; }
+  button:active { background: var(--ac); }
+  button.ok { background: var(--ok); color: #04210f; border-color: var(--ok); }
+  .glaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .g { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .g h2 { margin: 0; font-size: 20px; }
+  .lbl { font-size: 11px; letter-spacing: 1.5px; color: var(--mut); text-transform: uppercase; }
+  .score { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; text-align: center; }
+  .score .n { font-size: 15px; font-weight: 700; }
+  .score .s { font: 800 48px ui-monospace, monospace; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .meta { color: var(--mut); font-size: 13px; }
+  .banner { margin: 16px; padding: 12px; border: 1px solid #f59e0b; border-radius: 10px; color: #fbbf24; background: rgba(245,158,11,.12); }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--card); border: 1px solid var(--bd); padding: 8px 16px; border-radius: 10px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎛 Contrôle des glaces</h1>
+  <span class="meta" id="tn"></span>
+  <a class="b" href="index.html">Dashboard</a>
+  <span id="user"></span>
+</header>
+<div id="app"></div>
+<div id="toast"></div>
+<script type="module">
+import { db, auth, ref, onValue, update, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "./firebase.js?v=307898c9";
+import { h, fill } from "./dom.js?v=307898c9";
+import { commande, sideName } from "./logic.js?v=307898c9";
+
+// Page de secours du Stream Deck : memes commandes (logic.js > commande), grands boutons.
+// ?tournoi=ID fixe un tournoi ; sinon le tournoi actif.
+const fixed = new URLSearchParams(location.search).get("tournoi");
+let actif = null, cur = null, user = null, unsub = null, tid = null;
+
+const toast = (m) => {
+  const t = document.getElementById("toast");
+  t.textContent = m; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 1800);
+};
+
+async function envoyer(g, cmd) {
+  if (!user) return toast("Connecte-toi d'abord.");
+  const up = commande(cur ?? {}, g, cmd);
+  if (!up) return toast("Rien à faire.");
+  try { await update(ref(db, `public/tournois/${tid}`), up); } catch (e) { toast(`Refusé (${e.code ?? e.message})`); }
+}
+
+const B = (g, label, cmd, cls = "") => h("button", { class: cls, onclick: () => envoyer(g, cmd) }, label);
+
+function glace(g) {
+  const gl = cur?.glaces?.[g] ?? {};
+  const live = cur?.matches?.[gl.live];
+  const next = cur?.matches?.[gl.next];
+  const nom = (m, k) => (m ? sideName(m, k, cur.teams) || "—" : "—");
+  return h("div", { class: "g" },
+    h("h2", {}, `Glace ${g}`),
+    h("div", { class: "lbl" }, "En cours", live ? ` · #${live.num ?? ""}` : ""),
+    h("div", { class: "score" },
+      h("div", { class: "n" }, nom(live, "away")), h("div", {}, ""), h("div", { class: "n" }, nom(live, "home")),
+      h("div", { class: "s" }, live ? (live.awayScore ?? 0) : "–"), h("div", { class: "meta" }, "–"), h("div", { class: "s" }, live ? (live.homeScore ?? 0) : "–")),
+    h("div", { class: "two" }, B(g, "Visiteur +", "away_plus"), B(g, "Local +", "home_plus"), B(g, "Visiteur −", "away_moins"), B(g, "Local −", "home_moins")),
+    h("div", { class: "two" }, B(g, "🎨 Couleur visiteur", "away_couleur"), B(g, "🎨 Couleur local", "home_couleur")),
+    h("div", { class: "lbl" }, "Prochain", next ? ` · #${next.num ?? ""} ${nom(next, "away")} vs ${nom(next, "home")}` : " · aucun"),
+    h("div", { class: "three" }, B(g, "◀ Préc.", "prev"), B(g, "✓ Valider", "live", "ok"), B(g, "Suiv. ▶", "next")));
+}
+
+function render() {
+  document.getElementById("user").replaceChildren(
+    user ? h("button", { onclick: () => signOut(auth) }, "Déconnexion") : h("button", { onclick: () => signInWithPopup(auth, new GoogleAuthProvider()).catch((e) => toast(e.message)) }, "Connexion Google"));
+  document.getElementById("tn").textContent = cur?.nom ?? "";
+  const deux = Object.values(cur?.matches ?? {}).some((m) => Number(m.glace) === 2);
+  fill(document.getElementById("app"),
+    !user && h("div", { class: "banner" }, "Connecte-toi avec Google pour modifier."),
+    !tid ? h("div", { class: "banner" }, "Aucun tournoi actif.")
+      : h("div", { class: "glaces" }, glace(1), deux && glace(2)));
+}
+
+function watch(id) {
+  if (id === tid) return;
+  unsub?.(); tid = id; cur = null;
+  if (id) unsub = onValue(ref(db, `public/tournois/${id}`), (s) => { cur = s.val(); render(); });
+  render();
+}
+if (fixed) watch(fixed);
+else onValue(ref(db, "public/actif"), (s) => { actif = s.val(); watch(actif); });
+onAuthStateChanged(auth, (u) => { user = u; render(); });
+render();
+</script>
+</body>
+</html>

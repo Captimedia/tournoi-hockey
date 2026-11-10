@@ -48,6 +48,12 @@ Liens directs (à mettre en favori ou sur un Stream Deck) : `index.html?glace=1`
 
 - **Depuis la bibliothèque** : « + Depuis la bibliothèque… » (onglets Équipes et Commanditaires d'un tournoi) ajoute des éléments cochés dans la liste de la bibliothèque, sans nom à inventer. **Remplir les adresses** remplace les logos locaux ou vides par l'image du dépôt qui porte le même nom (un seul candidat, confirmation avant d'écrire).
 
+## Contrôle : page web et Stream Deck
+
+- **`controle.html`** (lien « 🎛 Contrôle » en haut du dashboard) : grands boutons par glace (pointage ±, couleur Pri/Sec par équipe, Précédent / Valider / Suivant). Connexion Google requise. C'est la solution de secours, utilisable sur tablette ou téléphone. Glace 2 apparaît seulement si un match l'utilise.
+- **Stream Deck** : Companion appelle une adresse du script Apps Script (dépôt « Diffusion Tournoi de Hockey », `StreamDeck.js`) qui modifie Firebase à ta place : `<URL_WEBAPP>?sd=1&key=<CLÉ>&glace=1&cmd=next`. `cmd` : next, prev, live, away_plus, away_moins, home_plus, home_moins, away_couleur, home_couleur, status (texte « Express 1 - 2 Flyers » pour afficher sur un bouton). Mise en route : voir le README de ce dépôt-là.
+- Les commandes sont dans `commande()` de `logic.js` (testées) ; `StreamDeck.js` en est une copie, vérifiée identique sur 60 000 cas simulés.
+
 ## Équipes : nom court et nom complet
 
 Chaque équipe a un **nom court** (celui de l'horaire, de l'overlay et de Scorebird, ex. `Express`) et un **nom complet** facultatif (ex. `Express de Mont-Joli`). Les deux sont modifiables dans l'onglet Équipes, et l'import reconnaît l'un ou l'autre : un horaire qui écrit `Express de Mont-Joli` retrouve l'équipe `Express`. Le nom complet s'affiche en info-bulle sur la page de la glace.
