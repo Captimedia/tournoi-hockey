@@ -1,6 +1,8 @@
-// Donnees de depart reprises du Google Sheet (onglet Equipes) et du repo overlay.
-const LOGOS = "https://captimedia.github.io/overlay/logos/";
-const SPONSORS_URL = "https://captimedia.github.io/overlay/commanditaires/";
+// Donnees de depart reprises du Google Sheet (onglet Equipes) ; les images sont dans graphiques/ (copie reduite de l'ancien depot overlay).
+import { graphiques } from "./config.js";
+
+const LOGOS = `${graphiques.base}logos/`;
+const SPONSORS_URL = `${graphiques.base}commanditaires/`;
 
 export const TEAMS = [
   ["BULLDOGS", "#BC0B0B", "#DADADA", "Bulldogs.png"],
