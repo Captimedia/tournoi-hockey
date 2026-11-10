@@ -66,6 +66,10 @@
   .pv-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--mut); font-size: 12px; text-align: center; padding: 8px; pointer-events: none; }
   .previews[data-mode=scorebird] .pv-frame { height: 90px; }
   @media (max-width: 900px) { .previews { grid-template-columns: 1fr; } }
+  #tabs { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: flex-end; }
+  .tabgroup { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .tabgroup-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: #64748b; margin-right: 2px; }
+  .url { flex: 1; min-width: 80px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--mut); }
   .page { display: flex; flex-direction: column; gap: 16px; }
   .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -154,8 +158,8 @@
   <span id="user"></span>
 </header>
 <div id="bar" class="bar"></div>
-<section id="previews" class="previews" hidden></section>
 <nav id="tabs"></nav>
+<section id="previews" class="previews" hidden></section>
 <main id="app"></main>
 <div id="toast"></div>
 
@@ -173,18 +177,18 @@
 import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-} from "./firebase.js?v=6f5832a0";
-import { h, fill, fallbackImg } from "./dom.js?v=6f5832a0";
+} from "./firebase.js?v=029af5bd";
+import { h, fill, fallbackImg } from "./dom.js?v=029af5bd";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
-  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, safeFileName, rawUrl,
-} from "./logic.js?v=6f5832a0";
-import { readScheduleFile } from "./import-file.js?v=6f5832a0";
-import { loadTree, addToCache, publishImage, testToken } from "./galerie.js?v=6f5832a0";
-import { graphiques } from "./config.js?v=6f5832a0";
-import { TEAMS, SPONSORS } from "./seed.js?v=6f5832a0";
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, rawUrl,
+} from "./logic.js?v=029af5bd";
+import { readScheduleFile } from "./import-file.js?v=029af5bd";
+import { loadTree, addToCache, publishImage, deleteImage, testToken } from "./galerie.js?v=029af5bd";
+import { graphiques } from "./config.js?v=029af5bd";
+import { TEAMS, SPONSORS } from "./seed.js?v=029af5bd";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};
@@ -458,7 +462,6 @@ function horaire() {
 /* ---------- Equipes et commanditaires ---------- */
 const picked = {}; // selection par liste (cle : chemin de la liste)
 const USED_BY = { teams: ["away", "home"], sponsors: ["sponsor"] };
-let moreFor = null; // ligne dont le panneau "⋯" est ouvert
 let galFor = null; // ligne dont la galerie de logos est ouverte
 const gal = { query: "", tree: null, error: null, loading: false };
 let ghAjoute = null; // date d'ajout du jeton GitHub (marqueur non secret ; le jeton est dans secret/)
@@ -511,7 +514,7 @@ async function ajouterLogo(file, folder, nom, setLogo) {
   try {
     const tree = gal.tree ?? await loadTree();
     const taken = tree.filter((x) => x.path.startsWith(`${graphiques.dossier}/${folder}/`)).map((x) => x.path.split("/").pop());
-    const name = safeFileName(nom || file.name.replace(/\.[^.]+$/, ""), "png", taken);
+    const name = keepFileName(file.name, taken);
     const dataUrl = await reduceImage(file, 400);
     Object.assign(up, { name, preview: dataUrl });
     render();
@@ -622,7 +625,7 @@ function askNew({ title, fields, root, libItems, isLib }) {
   nom.focus();
 }
 
-// Liste modifiable, une ligne courte par element : logo (clic = galerie), nom, couleurs, menu d'association, ⋯ et ✕.
+// Liste modifiable, une ligne par element : logo (clic = galerie), noms, couleurs, association, ✕, puis l'adresse du logo et sa copie.
 // scope "tournoi" : liste du tournoi selectionne, avec association a la bibliotheque (copie logo, couleurs, nom complet) ;
 // scope "lib" : la bibliotheque globale. fields : "colors", "complet" (le nom court est celui de l'horaire).
 function collection({ key, title, fields, scope }) {
@@ -689,32 +692,30 @@ function collection({ key, title, fields, scope }) {
       others.length > 0 && h("optgroup", { label: "Bibliothèque" }, others.map(opt)));
   };
 
-  const morePanel = (id, o, p) => h("div", { class: "more" },
-    fields.includes("complet") && h("label", { class: "meta" }, "Nom complet ",
-      h("input", { type: "text", placeholder: "ex. Express de Mont-Joli", title: "Aussi reconnu à l'import", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) })),
-    !isLib && o.lib && libItems[o.lib] && btn("Reprendre la version de la bibliothèque", () => apply(id, o.lib)),
-    !isLib && btn("Enregistrer dans la bibliothèque", () => versBiblio(id, o)),
-    h("label", { class: "meta", title: "Stockée dans la base : fonctionne pour ton overlay, pas pour Scorebird" }, "Image locale ",
-      h("input", { type: "file", accept: "image/*", onchange: async (e) => { const f = e.target.files[0]; if (f) put(`${p}logo`, await reduceImage(f, 200)); } })),
-    /^https?:/.test(o.logo ?? "") && h("div", { class: "meta" }, `Adresse du logo : ${o.logo}`));
+  const copier = (txt) => navigator.clipboard.writeText(txt).then(() => toast("Adresse copiée"), () => toast("Copie impossible"));
 
+  // Une seule ligne : l'essentiel d'abord (logo, nom, nom complet, couleurs, association), l'adresse du logo et son icone de copie a la fin.
   const line = ([id, o]) => {
     const p = `${root}/${id}/`;
     const rowKey = `${root}/${id}`;
     const setLogo = (url) => put(`${p}logo`, url);
+    const linked = !isLib && o.lib && libItems[o.lib];
     return h("div", { class: `item compact${flash.id === id ? " flash" : ""}` },
       h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
       h("button", { class: "logo-btn", title: "Choisir un logo dans la galerie",
         onclick: () => { galFor = galFor === rowKey ? null : rowKey; gal.query = ""; render(); if (galFor && !gal.tree) loadGallery(); } }, logoImg(o.logo)),
       h("input", { type: "text", class: "nom", placeholder: "Nom", title: "Nom court : celui de l'horaire et de l'overlay", value: o.nom ?? "", onchange: async (e) => { flashRow(id); await put(`${p}nom`, e.target.value.trim()); render(); } }),
+      fields.includes("complet") && h("input", { type: "text", class: "nom", placeholder: "Nom complet", title: "Nom complet (aussi reconnu à l'import)", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) }),
       fields.includes("colors") && [
         h("input", { type: "color", title: "Couleur primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
         h("input", { type: "color", title: "Couleur secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
       ],
       !isLib && assocSelect(id, o),
-      btn("⋯", () => { moreFor = moreFor === rowKey ? null : rowKey; render(); }, moreFor === rowKey ? "on" : ""),
+      linked && h("button", { title: "Reprendre la version de la bibliothèque", onclick: () => apply(id, o.lib) }, "↺"),
+      !isLib && h("button", { title: "Enregistrer dans la bibliothèque", onclick: () => versBiblio(id, o) }, "⇪"),
       btn("✕", () => supprimer([id]), "bad"),
-      moreFor === rowKey && morePanel(id, o, p),
+      h("span", { class: "url", title: o.logo ?? "" }, /^https?:/.test(o.logo ?? "") ? o.logo.replace(/^https?:\/\/(www\.)?/, "") : (o.logo ? "(image locale)" : "")),
+      /^https?:/.test(o.logo ?? "") && h("button", { title: "Copier l'adresse du logo", onclick: () => copier(o.logo) }, "📋"),
       galFor === rowKey && galleryPanel(folder, o.nom, setLogo));
   };
 
@@ -730,6 +731,60 @@ function collection({ key, title, fields, scope }) {
       }),
       sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, () => supprimer([...sel]), "bad")),
     h("div", { class: "list" }, entries.map(line)));
+}
+
+/* ---------- Banque d'images : tout le dossier graphiques/, en deux sections ---------- */
+async function supprimerImage(it, usedBy) {
+  const warn = usedBy.length ? `\nElle est utilisée par : ${usedBy.slice(0, 6).join(", ")}${usedBy.length > 6 ? "…" : ""}. Ces logos s'afficheront brisés.` : "";
+  if (!confirm(`Supprimer « ${it.name} » du dépôt ?${warn}\nIrréversible (l'historique GitHub la garde).`)) return;
+  let token = null;
+  try { token = (await get(ref(db, "secret/github"))).val()?.token ?? null; } catch { token = null; }
+  if (!token) return toast("Enregistre d'abord ton jeton GitHub (onglet Sauvegarde).");
+  try {
+    await deleteImage(token, it.path, it.sha);
+    gal.tree = await loadTree();
+    toast("Image supprimée.");
+  } catch (e) { toast(e.message); }
+  render();
+}
+
+function images() {
+  if (!gal.tree && !gal.loading && !gal.error) loadGallery();
+  const sections = [["logos", "Logos d'équipes"], ["commanditaires", "Commanditaires"]];
+  // Qui utilise quelle image : tournoi ouvert + bibliotheques (par adresse).
+  const users = (url) => [
+    ...Object.values(pub.teams ?? {}).filter((o) => o.logo === url).map((o) => `équipe ${o.nom}`),
+    ...Object.values(pub.sponsors ?? {}).filter((o) => o.logo === url).map((o) => `commanditaire ${o.nom}`),
+    ...Object.values(lib.teams ?? {}).filter((o) => o.logo === url).map((o) => `biblio ${o.nom}`),
+    ...Object.values(lib.sponsors ?? {}).filter((o) => o.logo === url).map((o) => `biblio ${o.nom}`),
+  ];
+  const q = normName(gal.query);
+  return h("div", { class: "page" },
+    h("div", { class: "row", style: "align-items:center" },
+      h("input", { type: "text", placeholder: "Rechercher une image…", value: gal.query,
+        oninput: (e) => { gal.query = e.target.value; render(); const el = document.querySelector("#app input[type=text]"); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); } }),
+      btn("↻ Actualiser", () => loadGallery(true))),
+    uploadCard(),
+    gal.error && h("div", { class: "banner" }, gal.error),
+    gal.loading && h("div", { class: "meta" }, "Chargement…"),
+    sections.map(([folder, titre]) => {
+      const items = galleryItems(gal.tree, graphiques.dossier, folder, graphiques.base).map((it) => ({ ...it, sha: gal.tree.find((x) => x.path === it.path)?.sha }))
+        .filter((it) => !q || normName(it.name).includes(q));
+      return h("div", { class: "panel" },
+        h("div", { class: "panel-header" }, h("span", { class: "section-label" }, `${titre} (${items.length})`),
+          h("label", { class: "uploadbtn", title: ghAjoute ? "Réduit l'image à 400 px et la publie, sous son nom d'origine" : "Enregistre d'abord ton jeton GitHub (onglet Sauvegarde)" },
+            "＋ Ajouter…",
+            h("input", { type: "file", accept: "image/*", style: "display:none",
+              onchange: async (e) => { const f = e.target.files[0]; if (f) await ajouterLogo(f, folder, "", async () => {}); } }))),
+        h("div", { class: "match-card" }, items.length
+          ? h("div", { class: "thumbs" }, items.map((it) => h("div", { class: "thumb", title: it.name },
+            fallbackImg(it.url, rawOf, { loading: "lazy" }),
+            h("span", {}, it.name.replace(/\.[^.]+$/, "")),
+            h("div", { class: "acts" },
+              h("button", { title: "Copier l'adresse", onclick: () => navigator.clipboard.writeText(it.url).then(() => toast("Adresse copiée")) }, "📋"),
+              h("button", { class: "bad", title: "Supprimer cette image", onclick: () => supprimerImage(it, users(it.url)) }, "✕")))))
+          : h("div", { class: "meta" }, "Aucune image.")));
+    }));
 }
 
 /* ---------- Importer un horaire ---------- */
@@ -1047,8 +1102,13 @@ function tournois() {
 }
 
 /* ---------- squelette ---------- */
-const TABS = [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"],
-  ["sponsors", "Commanditaires"], ["biblio", "Bibliothèque"], ["tournois", "Tournois"], ["sauvegarde", "Sauvegarde"]];
+// Menus par sections : le tournoi ouvert, les bibliotheques communes, la gestion. Glace 2 n'apparait que si un match l'utilise.
+const SECTIONS = [
+  ["Tournoi", [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"]]],
+  ["Bibliothèque", [["biblio", "Équipes et commanditaires"], ["images", "Images"]]],
+  ["Gestion", [["tournois", "Tournois"], ["sauvegarde", "Sauvegarde"]]],
+];
+const hasGlace2 = () => !tid || Object.values(pub.matches ?? {}).some((m) => Number(m.glace) === 2);
 let libTab = "teams";
 
 const noTournament = () => h("div", { class: "match-card empty" },
@@ -1094,7 +1154,10 @@ function render() {
   document.getElementById("user").replaceChildren(
     user ? btn("Déconnexion", () => signOut(auth)) : btn("Connexion Google", () => w(() => signInWithPopup(auth, new GoogleAuthProvider()))));
   fill(document.getElementById("bar"), tournamentBar());
-  document.getElementById("tabs").replaceChildren(...TABS.map(([k, l]) => btn(l, () => { tab = k; history.replaceState(null, "", k.startsWith("glace") ? `?glace=${k.slice(5)}` : location.pathname); render(); }, tab === k ? "on" : "")));
+  if (tab === "glace2" && !hasGlace2()) tab = "glace1";
+  document.getElementById("tabs").replaceChildren(...SECTIONS.map(([titre, items]) => h("div", { class: "tabgroup" },
+    h("span", { class: "tabgroup-label" }, titre),
+    items.filter(([k]) => k !== "glace2" || hasGlace2()).map(([k, l]) => btn(l, () => { tab = k; history.replaceState(null, "", k.startsWith("glace") ? `?glace=${k.slice(5)}` : location.pathname); render(); }, tab === k ? "on" : "")))));
   const views = {
     glace1: needT(() => glacePage(1)),
     glace2: needT(() => glacePage(2)),
@@ -1103,6 +1166,7 @@ function render() {
     equipes: needT(() => collection({ key: "teams", title: "Équipe", fields: ["colors", "complet"], scope: "tournoi" })),
     sponsors: needT(() => collection({ key: "sponsors", title: "Commanditaire", fields: [], scope: "tournoi" })),
     biblio,
+    images,
     tournois,
     sauvegarde,
   };

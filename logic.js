@@ -515,6 +515,22 @@ export const safeFileName = (base, ext, taken) => {
   return name;
 };
 
+// Nom du fichier tel que choisi par l'utilisateur (base conservee, accents et espaces compris). L'image est reencodee en PNG :
+// l'extension devient .png seulement si l'original n'en etait pas un. Jamais un nom deja pris (casse ignoree) -> suffixe -2, -3...
+export const keepFileName = (original, taken) => {
+  const stem = (original ?? "").replace(/\.[^.]+$/, "").replace(/[\\/]/g, "-").trim() || "logo";
+  const used = new Set((taken ?? []).map((n) => n.toLowerCase()));
+  let name = `${stem}.png`;
+  for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}-${i}.png`;
+  return name;
+};
+
+// Requete de suppression d'un fichier (API contents de GitHub) : le sha du fichier est obligatoire.
+export const contentsDelete = (cfg, path, sha) => ({
+  url: `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`,
+  body: { message: `suppression: ${path.split("/").pop()}`, sha, branch: cfg.branch },
+});
+
 // Requete de creation d'un fichier (API contents de GitHub). Pas de "sha" : si le fichier existe deja, GitHub refuse (422).
 export const contentsPut = (cfg, folder, name, base64) => ({
   url: `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.dossier}/${folder}/${encodeURIComponent(name)}`,

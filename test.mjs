@@ -366,7 +366,7 @@ assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glac
 assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
 
 /* ---------- Galerie et envoi de logos ---------- */
-import { galleryItems, galleryRank, safeFileName, contentsPut, githubError } from "./logic.js";
+import { galleryItems, galleryRank, safeFileName, keepFileName, contentsDelete, contentsPut, githubError } from "./logic.js";
 
 const tree = [
   { path: "graphiques/logos/Express.png", type: "blob" }, { path: "graphiques/logos/PredateursForillon.png", type: "blob" },
@@ -414,3 +414,12 @@ assert.equal(rawUrl("data:image/png;base64,AAAA", gcfg), null);
 assert.equal(rawUrl(undefined, gcfg), null);
 
 console.log("tous les tests passent");
+
+// Nom d'origine conserve (accents, espaces) ; .png seulement parce que l'image est reencodee ; jamais un nom pris.
+assert.equal(keepFileName("Prédateurs de Forillon.png", []), "Prédateurs de Forillon.png");
+assert.equal(keepFileName("photo.jpg", []), "photo.png");
+assert.equal(keepFileName("Logo.png", ["logo.PNG"]), "Logo-2.png");
+assert.equal(keepFileName("", []), "logo.png");
+assert.equal(contentsDelete({ owner: "o", repo: "r", branch: "main" }, "graphiques/logos/A é.png", "abc").url, "https://api.github.com/repos/o/r/contents/graphiques/logos/A%20%C3%A9.png");
+assert.equal(contentsDelete({ owner: "o", repo: "r", branch: "main" }, "g/a.png", "abc").body.sha, "abc");
+console.log("ok keepFileName / contentsDelete");

@@ -1,7 +1,7 @@
 // Lecture d'un fichier d'horaire (PDF, Excel, CSV, texte) dans le navigateur : rien n'est envoye a un serveur.
 // Les bibliotheques sont chargees a la demande, a une version precise, avec verification d'integrite (SRI).
-import { gamesFromPages, gamesToTsv } from "./pdftable.js?v=6f5832a0";
-import { parseSchedule } from "./logic.js?v=6f5832a0";
+import { gamesFromPages, gamesToTsv } from "./pdftable.js?v=029af5bd";
+import { parseSchedule } from "./logic.js?v=029af5bd";
 
 const CDN = "https://cdnjs.cloudflare.com/ajax/libs";
 const LIBS = {

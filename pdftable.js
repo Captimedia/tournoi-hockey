@@ -1,7 +1,7 @@
 // Reconstruit les matchs d'un PDF d'horaire a partir du texte et de sa position (logique pure, testee).
 // Format attendu : un tableau avec une ligne de titres (# / Date / Time ou Heure / Location / Category / Away / Score / Home),
 // un match par bloc de lignes, chaque colonne a une position horizontale fixe.
-import { normName } from "./logic.js?v=6f5832a0";
+import { normName } from "./logic.js?v=029af5bd";
 
 const FIELDS = {
   date: ["DATE"],
