@@ -46,6 +46,8 @@ En haut, deux **aperçus LIVE et NEXT** (choix « Notre overlay » ou « Scorebi
 
 Liens directs (à mettre en favori ou sur un Stream Deck) : `index.html?glace=1` et `index.html?glace=2`.
 
+- **Depuis la bibliothèque** : « + Depuis la bibliothèque… » (onglets Équipes et Commanditaires d'un tournoi) ajoute des éléments cochés dans la liste de la bibliothèque, sans nom à inventer. **Remplir les adresses** remplace les logos locaux ou vides par l'image du dépôt qui porte le même nom (un seul candidat, confirmation avant d'écrire).
+
 ## Équipes : nom court et nom complet
 
 Chaque équipe a un **nom court** (celui de l'horaire, de l'overlay et de Scorebird, ex. `Express`) et un **nom complet** facultatif (ex. `Express de Mont-Joli`). Les deux sont modifiables dans l'onglet Équipes, et l'import reconnaît l'un ou l'autre : un horaire qui écrit `Express de Mont-Joli` retrouve l'équipe `Express`. Le nom complet s'affiche en info-bulle sur la page de la glace.

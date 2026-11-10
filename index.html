@@ -32,7 +32,8 @@
   .pick-name small { color: var(--mut); font-weight: 400; }
   #toast button { margin-left: 8px; }
   .item.compact { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
-  .item.compact .nom { flex: 1; min-width: 120px; }
+  .item.compact .nom { flex: none; width: var(--w-nom, 14ch); min-width: 0; }
+  .item.compact .complet { flex: none; width: var(--w-complet, 20ch); min-width: 0; }
   .modal { background: var(--card); color: var(--tx); border: 1px solid var(--bd); border-radius: 14px; padding: 16px; width: min(440px, 92vw); }
   .modal::backdrop { background: rgba(0,0,0,.65); }
   .modal h3 { margin: 0 0 10px; }
@@ -69,7 +70,7 @@
   #tabs { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: flex-end; }
   .tabgroup { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .tabgroup-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: #64748b; margin-right: 2px; }
-  .url { flex: 1; min-width: 80px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--mut); }
+  .url { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--mut); }
   .page { display: flex; flex-direction: column; gap: 16px; }
   .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -177,18 +178,18 @@
 import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-} from "./firebase.js?v=029af5bd";
-import { h, fill, fallbackImg } from "./dom.js?v=029af5bd";
+} from "./firebase.js?v=1deeb4dd";
+import { h, fill, fallbackImg } from "./dom.js?v=1deeb4dd";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
-  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, rawUrl,
-} from "./logic.js?v=029af5bd";
-import { readScheduleFile } from "./import-file.js?v=029af5bd";
-import { loadTree, addToCache, publishImage, deleteImage, testToken } from "./galerie.js?v=029af5bd";
-import { graphiques } from "./config.js?v=029af5bd";
-import { TEAMS, SPONSORS } from "./seed.js?v=029af5bd";
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, matchLogos, rawUrl,
+} from "./logic.js?v=1deeb4dd";
+import { readScheduleFile } from "./import-file.js?v=1deeb4dd";
+import { loadTree, addToCache, publishImage, deleteImage, testToken } from "./galerie.js?v=1deeb4dd";
+import { graphiques } from "./config.js?v=1deeb4dd";
+import { TEAMS, SPONSORS } from "./seed.js?v=1deeb4dd";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};
@@ -692,6 +693,44 @@ function collection({ key, title, fields, scope }) {
       others.length > 0 && h("optgroup", { label: "Bibliothèque" }, others.map(opt)));
   };
 
+  // Largeur des champs de nom : le texte le plus long de la liste, borne pour rester lisible (le reste de la ligne va a l'adresse).
+  const widthCh = (k) => Math.min(30, Math.max(8, ...entries.map(([, o]) => (o[k] ?? "").length)) + 3);
+
+  // Ajouter depuis la bibliotheque : on coche des elements deja existants (pas de nom a inventer) ; ceux deja dans le tournoi sont exclus.
+  const deja = new Set(Object.values(items).map((o) => o.lib).filter(Boolean));
+  const dispo = isLib ? [] : Object.entries(libItems).filter(([gid, l]) => !deja.has(gid) && !entries.some(([, o]) => normName(o.nom) === normName(l.nom)))
+    .sort((a, b) => normName(a[1].nom).localeCompare(normName(b[1].nom)));
+  const depuisBiblio = () => {
+    const dlg = h("dialog", { class: "modal" });
+    const fermer = () => { if (dlg.isConnected) { dlg.close(); dlg.remove(); render(); } };
+    const boxes = dispo.map(([gid, l]) => [gid, h("input", { type: "checkbox" }), l]);
+    const ajouter = async () => {
+      const ids = boxes.filter(([, b]) => b.checked);
+      if (!ids.length) return fermer();
+      const up = Object.fromEntries(ids.map(([gid, , l]) => [`${root}/${push(ref(db, root)).key}`, { nom: l.nom, ...fromLib(l), lib: gid }]));
+      if (await w(() => update(ref(db), up))) { toast(`${ids.length} ajouté(s).`); fermer(); }
+    };
+    dlg.addEventListener("close", fermer);
+    dlg.append(h("h3", {}, `Ajouter depuis la bibliothèque`),
+      dispo.length ? h("div", { class: "picker" }, boxes.map(([, b, l]) => h("label", { class: "pick" }, b, logoImg(l.logo), h("span", { class: "pick-name" }, l.nom, l.complet ? h("small", {}, ` ${l.complet}`) : null))))
+        : h("div", { class: "meta" }, "Tout ce qui est dans la bibliothèque est déjà dans ce tournoi."),
+      h("div", { class: "row" }, btn("Annuler", fermer), dispo.length > 0 && btn("Ajouter la sélection", ajouter, "ok")));
+    document.body.append(dlg);
+    dlg.showModal();
+  };
+
+  // Logos locaux : cherche dans la banque d'images un fichier du meme nom, montre la liste, applique apres confirmation.
+  const locaux = Object.entries(items).filter(([, o]) => !/^https?:/.test(o.logo ?? "")).length;
+  const remplirAdresses = async () => {
+    if (!gal.tree) await loadGallery();
+    if (!gal.tree) return;
+    const found = matchLogos(items, galleryItems(gal.tree, graphiques.dossier, folder, graphiques.base));
+    const ids = Object.keys(found);
+    if (!ids.length) return toast(`Aucun nom ne correspond à une image (${locaux} logo(s) local/vide).`);
+    const liste = ids.map((id) => `${items[id].nom} → ${decodeURIComponent(found[id].split("/").pop())}`).join("\n");
+    if (!confirm(`Remplacer ${ids.length} logo(s) local/vides par l'adresse de l'image du même nom ?\n${liste}`)) return;
+    w(() => update(ref(db), Object.fromEntries(ids.map((id) => [`${root}/${id}/logo`, found[id]]))));
+  };
   const copier = (txt) => navigator.clipboard.writeText(txt).then(() => toast("Adresse copiée"), () => toast("Copie impossible"));
 
   // Une seule ligne : l'essentiel d'abord (logo, nom, nom complet, couleurs, association), l'adresse du logo et son icone de copie a la fin.
@@ -705,7 +744,7 @@ function collection({ key, title, fields, scope }) {
       h("button", { class: "logo-btn", title: "Choisir un logo dans la galerie",
         onclick: () => { galFor = galFor === rowKey ? null : rowKey; gal.query = ""; render(); if (galFor && !gal.tree) loadGallery(); } }, logoImg(o.logo)),
       h("input", { type: "text", class: "nom", placeholder: "Nom", title: "Nom court : celui de l'horaire et de l'overlay", value: o.nom ?? "", onchange: async (e) => { flashRow(id); await put(`${p}nom`, e.target.value.trim()); render(); } }),
-      fields.includes("complet") && h("input", { type: "text", class: "nom", placeholder: "Nom complet", title: "Nom complet (aussi reconnu à l'import)", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) }),
+      fields.includes("complet") && h("input", { type: "text", class: "complet", placeholder: "Nom complet", title: "Nom complet (aussi reconnu à l'import)", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) }),
       fields.includes("colors") && [
         h("input", { type: "color", title: "Couleur primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
         h("input", { type: "color", title: "Couleur secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
@@ -722,6 +761,8 @@ function collection({ key, title, fields, scope }) {
   return h("div", {},
     h("div", { class: "row", style: "margin:8px 0" },
       btn(`+ ${title}`, add, "ok"),
+      !isLib && Object.keys(libItems).length > 0 && btn("+ Depuis la bibliothèque…", depuisBiblio, "ok"),
+      locaux > 0 && btn(`Remplir les adresses (${locaux} locales)`, remplirAdresses),
       isLib && !entries.length && btn("Charger les données de départ", loadSeed),
       suggestions.length > 0 && btn(`Associer les ${suggestions.length} équipes qui ont le même nom`, appliquerSuggestions, "ok"),
       dup?.groups.length > 0 && btn(`Fusionner les doublons (${dup.groups.length})`, fusionner, "ok"),
@@ -730,7 +771,7 @@ function collection({ key, title, fields, scope }) {
         render();
       }),
       sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, () => supprimer([...sel]), "bad")),
-    h("div", { class: "list" }, entries.map(line)));
+    h("div", { class: "list", style: `--w-nom:${widthCh("nom")}ch;--w-complet:${widthCh("complet")}ch` }, entries.map(line)));
 }
 
 /* ---------- Banque d'images : tout le dossier graphiques/, en deux sections ---------- */

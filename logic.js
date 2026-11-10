@@ -515,6 +515,20 @@ export const safeFileName = (base, ext, taken) => {
   return name;
 };
 
+// Logos locaux (data: ou vides) -> image du depot dont le nom est le meme que le nom court ou complet (sans accents, casse ni ponctuation).
+// Une seule image possible : s'il y en a plusieurs ou aucune, on ne devine pas. items : { id: {nom, complet, logo} }, images : galleryItems().
+export const matchLogos = (items, images) => {
+  const sq = (x) => normName(x ?? "").replace(/[^A-Z0-9]/g, "");
+  const out = {};
+  for (const [id, o] of Object.entries(items ?? {})) {
+    if (/^https?:/.test(o.logo ?? "")) continue;
+    const keys = [o.nom, o.complet].map(sq).filter(Boolean);
+    const hits = images.filter((it) => keys.includes(sq(it.name.replace(/\.[^.]+$/, ""))));
+    if (hits.length === 1) out[id] = hits[0].url;
+  }
+  return out;
+};
+
 // Nom du fichier tel que choisi par l'utilisateur (base conservee, accents et espaces compris). L'image est reencodee en PNG :
 // l'extension devient .png seulement si l'original n'en etait pas un. Jamais un nom deja pris (casse ignoree) -> suffixe -2, -3...
 export const keepFileName = (original, taken) => {

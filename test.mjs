@@ -366,7 +366,7 @@ assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glac
 assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
 
 /* ---------- Galerie et envoi de logos ---------- */
-import { galleryItems, galleryRank, safeFileName, keepFileName, contentsDelete, contentsPut, githubError } from "./logic.js";
+import { galleryItems, galleryRank, safeFileName, keepFileName, matchLogos, contentsDelete, contentsPut, githubError } from "./logic.js";
 
 const tree = [
   { path: "graphiques/logos/Express.png", type: "blob" }, { path: "graphiques/logos/PredateursForillon.png", type: "blob" },
@@ -423,3 +423,9 @@ assert.equal(keepFileName("", []), "logo.png");
 assert.equal(contentsDelete({ owner: "o", repo: "r", branch: "main" }, "graphiques/logos/A é.png", "abc").url, "https://api.github.com/repos/o/r/contents/graphiques/logos/A%20%C3%A9.png");
 assert.equal(contentsDelete({ owner: "o", repo: "r", branch: "main" }, "g/a.png", "abc").body.sha, "abc");
 console.log("ok keepFileName / contentsDelete");
+
+// Logos locaux : une seule image du meme nom (accents/casse/ponctuation ignores) ; sinon rien.
+const imgs = [{ name: "Express.png", url: "u/Express.png" }, { name: "Predateurs.png", url: "u/P1" }, { name: "predateurs_2.png", url: "u/P2" }, { name: "Prédateurs.jpg", url: "u/P3" }];
+const ml = matchLogos({ a: { nom: "Express", logo: "data:image/png;base64,xx" }, b: { nom: "Prédateurs", logo: "" }, c: { nom: "Vikings", logo: "data:x" }, d: { nom: "Express", logo: "https://ok/x.png" }, e: { nom: "X", complet: "express" } }, imgs);
+assert.deepEqual(ml, { a: "u/Express.png", e: "u/Express.png" }); // b : 2 candidats (Predateurs.png et Prédateurs.jpg) -> pas devine ; d : deja une adresse
+console.log("ok matchLogos");
