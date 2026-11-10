@@ -291,10 +291,14 @@ export const matchesUsing = (matches, ids, fields) =>
 // opts.teams : equipes existantes ; opts.fullNames : cle du nom court -> nom complet trouve dans le fichier.
 // Une equipe creee recoit son nom complet ; une equipe existante sans nom complet l'apprend (un nom du fichier
 // associe a une equipe existante est retenu comme nom complet, jamais ecrase s'il existe deja).
-export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = {}, fullNames = new Map() } = {}) => {
+// opts.existing : matchs deja dans le tournoi ({ id: match }). Un match du fichier de meme numero est SYNCHRONISE au lieu
+// d'etre ajoute : date, heure, lieu, division et ronde sont mis a jour ; une equipe supprimee ou vide est recreee et rebranchee ;
+// une equipe valide n'est jamais remplacee (signalee en "conflicts") ; pointages, commanditaire, couleurs et notes ne sont pas touches.
+const build = (matches, glaceByLieu, teamIdByKey, newId, { teams = {}, fullNames = new Map(), existing = null } = {}) => {
   const updates = {};
   const ids = new Map(teamIdByKey);
   const learned = new Set();
+  const stats = { added: 0, updated: 0, unchanged: 0, relinked: 0, conflicts: 0, ambiguous: 0, teamsCreated: 0 };
   const idFor = (nom) => {
     const k = normName(nom);
     const full = fullNames.get(k);
@@ -302,6 +306,7 @@ export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = 
       const id = newId();
       ids.set(k, id);
       updates[`teams/${id}`] = { nom, ...(full && { complet: full }), primary: "#666666", secondary: "#dadada" };
+      stats.teamsCreated++;
     } else {
       const id = ids.get(k);
       const t = teams[id];
@@ -313,7 +318,38 @@ export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = 
     }
     return ids.get(k);
   };
+  const byNum = new Map();
+  for (const [id, m] of Object.entries(existing ?? {})) byNum.set(m.num, [...(byNum.get(m.num) ?? []), id]);
+
+  const syncOne = (id, ex, m) => {
+    const set = {};
+    for (const f of ["date", "heure", "lieu", "division", "round"]) if (m[f] && ex[f] !== m[f]) set[f] = m[f];
+    for (const k of ["away", "home"]) {
+      const s = m[k];
+      const cur = ex[k];
+      if (!(cur && teams[cur])) {
+        if (s.ref) {
+          if (ex[`${k}Ref`] !== s.ref || cur) { set[`${k}Ref`] = s.ref; if (cur) set[k] = null; stats.relinked++; }
+        } else {
+          set[k] = idFor(s.nom);
+          set[`${k}Ref`] = null;
+          stats.relinked++;
+        }
+      } else if (s.nom && normName(s.nom) !== normName(teams[cur].nom) && normName(s.nom) !== normName(teams[cur].complet ?? "")) {
+        stats.conflicts++;
+      }
+    }
+    for (const [f, v] of Object.entries(set)) updates[`matches/${id}/${f}`] = v;
+    if (Object.keys(set).length) stats.updated++; else stats.unchanged++;
+  };
+
   for (const m of matches) {
+    const found = byNum.get(m.num);
+    if (found) {
+      if (found.length > 1) stats.ambiguous++; // plusieurs matchs de meme numero : a nettoyer d'abord
+      else syncOne(found[0], existing[found[0]], m);
+      continue;
+    }
     const rec = { num: m.num, glace: glaceByLieu[m.lieu] ?? 1, date: m.date, heure: m.heure };
     if (m.lieu) rec.lieu = m.lieu;
     if (m.division) rec.division = m.division;
@@ -323,9 +359,12 @@ export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = 
       else rec[k] = idFor(m[k].nom);
     }
     updates[`matches/${newId()}`] = rec;
+    stats.added++;
   }
-  return updates;
+  return { updates, stats };
 };
+export const buildUpdate = (...args) => build(...args).updates;
+export const buildSync = build;
 
 /* ---------- Tournois et bibliotheques ---------- */
 
@@ -366,5 +405,73 @@ export const legacyMove = (raw, lib = {}) => {
     for (const [id, v] of Object.entries(raw?.[key] ?? {})) if (!lib?.[key]?.[id]) up[`public/lib/${key}/${id}`] = v;
   }
   for (const key of LEGACY) if (raw?.[key]) up[`public/${key}`] = null;
+  return up;
+};
+
+/* ---------- Nettoyage et suppression ---------- */
+
+// Groupes d'equipes de meme nom (accents, majuscules et espaces ignores).
+export const duplicateTeams = (teams) => {
+  const g = new Map();
+  for (const [id, t] of Object.entries(teams ?? {})) g.set(normName(t.nom), [...(g.get(normName(t.nom)) ?? []), id]);
+  return [...g.values()].filter((a) => a.length > 1);
+};
+
+const richness = (t) => (t.lib ? 4 : 0) + (t.logo ? 2 : 0) + (t.complet ? 1 : 0);
+
+// Fusion : garde l'equipe la plus complete (puis la plus ancienne), rebranche les matchs, complete ses champs vides,
+// supprime les autres. Chemins relatifs au tournoi.
+export const mergeTeams = (teams, matches) => {
+  const updates = {};
+  const groups = [];
+  for (const ids of duplicateTeams(teams)) {
+    const [keep, ...drop] = [...ids].sort((a, b) => richness(teams[b]) - richness(teams[a]) || a.localeCompare(b));
+    groups.push({ keep, drop });
+    for (const f of ["logo", "complet", "lib"]) {
+      const src = drop.find((d) => teams[d][f]);
+      if (!teams[keep][f] && src) updates[`teams/${keep}/${f}`] = teams[src][f];
+    }
+    for (const d of drop) {
+      updates[`teams/${d}`] = null;
+      for (const [mid, m] of Object.entries(matches ?? {})) for (const k of ["away", "home"]) if (m[k] === d) updates[`matches/${mid}/${k}`] = keep;
+    }
+  }
+  return { updates, groups };
+};
+
+const POINTERS = ["live", "next"];
+
+// Matchs de meme numero : garde celui qui a le plus de donnees (affiche en direct, pointages, commanditaire), puis le plus ancien.
+export const duplicateMatches = (matches, glaces) => {
+  const byNum = new Map();
+  for (const [id, m] of Object.entries(matches ?? {})) byNum.set(m.num, [...(byNum.get(m.num) ?? []), id]);
+  const pointed = new Set(Object.values(glaces ?? {}).flatMap((g) => POINTERS.map((p) => g?.[p]).filter(Boolean)));
+  const score = (id) => {
+    const m = matches[id];
+    return (pointed.has(id) ? 8 : 0) + (m.awayScore != null ? 3 : 0) + (m.homeScore != null ? 3 : 0) + (m.sponsor ? 1 : 0) + (m.awayMode || m.homeMode ? 1 : 0);
+  };
+  const updates = {};
+  const groups = [];
+  for (const [num, ids] of byNum) {
+    if (ids.length < 2 || num == null) continue;
+    const [keep, ...drop] = [...ids].sort((a, b) => score(b) - score(a) || a.localeCompare(b));
+    groups.push({ num, keep, drop });
+    for (const d of drop) updates[`matches/${d}`] = null;
+    for (const [g, v] of Object.entries(glaces ?? {})) for (const p of POINTERS) if (drop.includes(v?.[p])) updates[`glaces/${g}/${p}`] = keep;
+  }
+  return { updates, groups, drop: groups.flatMap((x) => x.drop) };
+};
+
+// Suppression de matchs (Set d'ids) : les glaces qui les affichaient sont videes. restoreMatches fait l'inverse (Annuler).
+export const deleteMatches = (ids, glaces) => {
+  const up = {};
+  for (const id of ids) up[`matches/${id}`] = null;
+  for (const [g, v] of Object.entries(glaces ?? {})) for (const p of POINTERS) if (ids.has(v?.[p])) up[`glaces/${g}/${p}`] = null;
+  return up;
+};
+export const restoreMatches = (ids, matches, glaces) => {
+  const up = {};
+  for (const id of ids) if (matches?.[id]) up[`matches/${id}`] = matches[id];
+  for (const [g, v] of Object.entries(glaces ?? {})) for (const p of POINTERS) if (ids.has(v?.[p])) up[`glaces/${g}/${p}`] = v[p];
   return up;
 };

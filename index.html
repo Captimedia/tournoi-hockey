@@ -24,6 +24,12 @@
   .bar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--bd); }
   .assoc { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; padding-left: 26px; }
   .assoc select { max-width: 260px; }
+  .pill.ok { background: rgba(34,197,94,.15); color: var(--ok); }
+  .picker { width: 100%; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow: auto; background: rgba(0,0,0,.2); border: 1px solid var(--bd); border-radius: 8px; padding: 8px; }
+  .pick { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--bd); }
+  .pick-name { flex: 1; font-weight: 600; }
+  .pick-name small { color: var(--mut); font-weight: 400; }
+  #toast button { margin-left: 8px; }
   .page { display: flex; flex-direction: column; gap: 16px; }
   .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -124,8 +130,9 @@ import {
 import { h, fill } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
-  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces, matchesUsing, normName, pairFullNames,
+  parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
 import { TEAMS, SPONSORS } from "./seed.js";
@@ -148,6 +155,7 @@ let dirty = false;
 /* ---------- ecriture ---------- */
 const toast = (msg) => {
   const t = document.getElementById("toast");
+  t.style.pointerEvents = "";
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast.t);
@@ -159,6 +167,16 @@ const w = async (fn) => {
     return false;
   }
 };
+// Message avec un bouton Annuler pendant 15 secondes : restore() reecrit ce qui vient d'etre supprime.
+function undoable(msg, restore) {
+  const t = document.getElementById("toast");
+  const hide = () => { t.classList.remove("show"); t.style.pointerEvents = ""; };
+  t.replaceChildren(`${msg} `, h("button", { onclick: async () => { clearTimeout(toast.t); hide(); if (await w(restore)) toast("Rétabli."); } }, "Annuler"));
+  t.style.pointerEvents = "auto";
+  t.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(hide, 15000);
+}
 const put = (path, val) => w(() => set(ref(db, path), val === "" || val === undefined ? null : val));
 const btn = (label, fn, cls = "") => h("button", { class: cls, onclick: fn }, label);
 
@@ -319,32 +337,50 @@ function glacePage(g) {
 
 /* ---------- onglet Horaire ---------- */
 function horaire() {
+  const root = `${base()}/matches`;
+  const sel = (picked[root] ??= new Set());
+  for (const id of [...sel]) if (!(id in (pub.matches ?? {}))) sel.delete(id);
   const rows = [1, 2].flatMap((g) => {
     const list = sortMatches(pub.matches, g);
     return list.map((m) => ({ m, st: statut(list, pub.glaces?.[g]?.live, m.id) }));
   }).filter((r) => filtre === "Tous" || r.st === filtre);
+  const visible = rows.map((r) => r.m.id);
+  const allOn = visible.length > 0 && visible.every((id) => sel.has(id));
+  const dm = duplicateMatches(pub.matches, pub.glaces);
 
   const add = () => {
     const num = Math.max(0, ...Object.values(pub.matches ?? {}).map((m) => m.num ?? 0)) + 1;
-    w(() => push(ref(db, `${base()}/matches`), { num, glace: 1 }));
+    w(() => push(ref(db, root), { num, glace: 1 }));
   };
-  const del = (id) => {
-    if (!confirm("Supprimer ce match ?")) return;
-    put(`${base()}/matches/${id}`, null);
-    put(`prive/${tid}/${id}`, null);
+  // Suppression de matchs (leurs notes aussi) avec Annuler : les glaces qui les affichaient sont videes puis rétablies.
+  const supprimer = async (ids) => {
+    const set = new Set(ids);
+    if (!confirm(`Supprimer ${ids.length} match(s) ? Leurs notes (caméraman, note) sont aussi effacées.`)) return;
+    const up = { ...prefixKeys(deleteMatches(set, pub.glaces), base()), ...Object.fromEntries(ids.map((id) => [`prive/${tid}/${id}`, null])) };
+    const back = { ...prefixKeys(restoreMatches(set, pub.matches, pub.glaces), base()), ...Object.fromEntries(ids.filter((id) => priv[id]).map((id) => [`prive/${tid}/${id}`, priv[id]])) };
+    if (await w(() => update(ref(db), up))) {
+      ids.forEach((id) => sel.delete(id));
+      undoable(`${ids.length} match(s) supprimé(s).`, () => update(ref(db), back));
+    }
+  };
+  const supprimerDoublons = async () => {
+    const resume = dm.groups.map((g) => `#${g.num} ×${g.drop.length + 1}`).join(", ");
+    if (!confirm(`Supprimer ${dm.drop.length} match(s) en double ?\n${resume}\nPour chaque numéro, on garde le match qui a des pointages, un commanditaire ou qui est affiché en direct, sinon le plus ancien.`)) return;
+    await w(() => update(ref(db), { ...prefixKeys(dm.updates, base()), ...Object.fromEntries(dm.drop.map((id) => [`prive/${tid}/${id}`, null])) }));
   };
   const text = (path, val, type = "text", cls = "") =>
     h("input", { type, value: val ?? "", class: cls, onchange: (e) => put(path, e.target.value) });
   const num = (path, val) =>
     h("input", { type: "number", min: 0, class: "n", value: val ?? "",
       onchange: (e) => put(path, e.target.value === "" ? null : Number(e.target.value)) });
-  const sel = (path, obj, cur, label, empty) =>
+  const pick = (path, obj, cur, label, empty) =>
     h("select", { onchange: (e) => put(path, e.target.value) }, optionsOf(obj, cur, label, empty));
 
   const tr = ({ m, st }) => {
     const mp = `${base()}/matches/${m.id}/`;
     const pv = priv[m.id] ?? {};
     return h("tr", {},
+      h("td", {}, h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(m.id), onchange: (e) => { if (e.target.checked) sel.add(m.id); else sel.delete(m.id); render(); } })),
       h("td", {}, text(`${mp}num`, m.num, "number", "n")),
       h("td", {}, h("select", { onchange: (e) => put(`${mp}glace`, Number(e.target.value)) },
         [1, 2].map((g) => h("option", { value: g, selected: Number(m.glace) === g }, g)))),
@@ -352,30 +388,38 @@ function horaire() {
       h("td", {}, text(`${mp}heure`, m.heure, "time")),
       h("td", {}, text(`${mp}division`, m.division)),
       h("td", {}, text(`${mp}round`, m.round)),
-      h("td", {}, sel(`${mp}away`, pub.teams, m.away, (t) => t.nom, m.awayRef ?? "—")),
+      h("td", {}, pick(`${mp}away`, pub.teams, m.away, (t) => t.nom, m.awayRef ?? "—")),
       h("td", {}, num(`${mp}awayScore`, m.awayScore), " – ", num(`${mp}homeScore`, m.homeScore)),
-      h("td", {}, sel(`${mp}home`, pub.teams, m.home, (t) => t.nom, m.homeRef ?? "—")),
-      h("td", {}, sel(`${mp}sponsor`, pub.sponsors, m.sponsor, (s) => s.nom)),
+      h("td", {}, pick(`${mp}home`, pub.teams, m.home, (t) => t.nom, m.homeRef ?? "—")),
+      h("td", {}, pick(`${mp}sponsor`, pub.sponsors, m.sponsor, (s) => s.nom)),
       h("td", {}, text(`prive/${tid}/${m.id}/camera`, pv.camera)),
       h("td", {}, text(`prive/${tid}/${m.id}/note`, pv.note)),
       h("td", {}, h("span", { class: `pill ${st}` }, st)),
-      h("td", {}, btn("✕", () => del(m.id), "bad")));
+      h("td", {}, btn("✕", () => supprimer([m.id]), "bad")));
   };
 
   return h("div", {},
     h("div", { class: "row", style: "margin:8px 0" },
       ["Tous", "Live", "À venir", "Complété"].map((f) => btn(f, () => { filtre = f; render(); }, filtre === f ? "on" : "")),
-      btn("+ Ajouter un match", add, "ok")),
+      btn("+ Ajouter un match", add, "ok"),
+      visible.length > 0 && btn(allOn ? "Tout désélectionner" : "Tout sélectionner", () => {
+        if (allOn) visible.forEach((id) => sel.delete(id)); else visible.forEach((id) => sel.add(id));
+        render();
+      }),
+      sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, () => supprimer([...sel]), "bad"),
+      dm.groups.length > 0 && btn(`Supprimer les matchs en double (${dm.drop.length})`, supprimerDoublons, "bad")),
     h("div", { class: "scroll" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["#", "Glace", "Date", "Heure", "Division", "Ronde", "Visiteur", "Score", "Local", "Commanditaire", "Caméraman", "Note", "Statut", ""].map((c) => h("th", {}, c)))),
+      h("thead", {}, h("tr", {}, ["", "#", "Glace", "Date", "Heure", "Division", "Ronde", "Visiteur", "Score", "Local", "Commanditaire", "Caméraman", "Note", "Statut", ""].map((c) => h("th", {}, c)))),
       h("tbody", {}, rows.map(tr)))));
 }
 
 /* ---------- Equipes et commanditaires ---------- */
 const picked = {}; // selection par liste (cle : chemin de la liste)
 const USED_BY = { teams: ["away", "home"], sponsors: ["sponsor"] };
+let pickerFor = null; // equipe dont la liste "Choisir dans la bibliotheque" est ouverte
+let pickerQuery = "";
 
-// Liste modifiable avec selection multiple pour supprimer.
+// Liste modifiable avec selection multiple pour supprimer (avec Annuler).
 // scope "tournoi" : liste du tournoi selectionne, avec association a la bibliotheque (copie logo, couleurs, nom complet) ;
 // scope "lib" : la bibliotheque globale. fields : "colors", "complet" (le nom court est celui de l'horaire).
 function collection({ key, title, fields, scope }) {
@@ -389,56 +433,90 @@ function collection({ key, title, fields, scope }) {
   const seed = key === "teams" ? TEAMS : SPONSORS;
   const add = () => w(() => push(ref(db, root), { nom: "Nouveau" }));
   const loadSeed = () => w(() => update(ref(db, root), Object.fromEntries(seed.map((s) => [push(ref(db, root)).key, s]))));
-  const supprimer = async () => {
-    const used = isLib ? 0 : matchesUsing(pub.matches, sel, USED_BY[key]);
-    const warn = used ? `\n${used} match(s) les utilisent encore : leur nom apparaîtra vide.` : "";
-    if (!confirm(`Supprimer ${sel.size} élément(s) ?${warn}\nTélécharge une sauvegarde avant si tu veux pouvoir revenir en arrière.`)) return;
-    if (await w(() => update(ref(db, root), Object.fromEntries([...sel].map((id) => [id, null]))))) {
-      sel.clear();
-      render();
+
+  const supprimer = async (ids) => {
+    const used = isLib ? 0 : matchesUsing(pub.matches, new Set(ids), USED_BY[key]);
+    const warn = used ? `\n${used} match(s) les utilisent encore : leur nom apparaîtra vide (tu peux annuler juste après).` : "";
+    if (!confirm(`Supprimer ${ids.length} élément(s) ?${warn}`)) return;
+    const back = Object.fromEntries(ids.map((id) => [`${root}/${id}`, items[id]]));
+    if (await w(() => update(ref(db, root), Object.fromEntries(ids.map((id) => [id, null]))))) {
+      ids.forEach((id) => sel.delete(id));
+      undoable(`${ids.length} élément(s) supprimé(s).`, () => update(ref(db), back));
     }
   };
 
-  // Associations avec la bibliotheque (tournoi seulement). Copie : modifier la bibliotheque plus tard ne change pas les anciens tournois.
+  // Association avec la bibliotheque (tournoi seulement) : COPIE logo, couleurs et nom complet ; le nom court du tournoi ne change pas.
+  // Pour reprendre une version plus recente de la bibliotheque, on rechoisit simplement la meme equipe.
   const apply = (id, gid) => (gid
     ? w(() => update(ref(db, `${root}/${id}`), { ...fromLib(libItems[gid]), lib: gid }))
-    : put(`${root}/${id}/lib`, null)); // retire le lien, garde ce qui a ete copie
+    : put(`${root}/${id}/lib`, null)); // dissocier : le lien disparait, ce qui a ete copie reste
   const versBiblio = (id, o) => {
     if (o.lib && libItems[o.lib]) {
-      if (!confirm(`Mettre à jour « ${libItems[o.lib].nom} » dans la bibliothèque avec ces valeurs ?`)) return;
+      if (!confirm(`Mettre à jour « ${libItems[o.lib].nom} » dans la bibliothèque avec le logo, les couleurs et le nom complet de cette équipe ?`)) return;
       w(() => update(ref(db, `public/lib/${key}/${o.lib}`), toLib(o)));
     } else {
       const gid = push(ref(db, `public/lib/${key}`)).key;
       w(() => update(ref(db), { [`public/lib/${key}/${gid}`]: toLib(o), [`${root}/${id}/lib`]: gid }));
     }
   };
-  const suggestions = isLib ? [] : entries.filter(([, o]) => !o.lib).map(([id, o]) => [id, libCandidates(o, libItems)]).filter(([, c]) => c.length === 1);
+  const suggestions = isLib ? [] : entries.filter(([, o]) => !(o.lib && libItems[o.lib])).map(([id, o]) => [id, libCandidates(o, libItems)]).filter(([, c]) => c.length === 1);
   const appliquerSuggestions = () => {
     const noms = suggestions.map(([id, [gid]]) => `${items[id].nom} → ${libItems[gid].nom}`).join("\n");
-    if (!confirm(`Appliquer ces ${suggestions.length} associations ?\n${noms}`)) return;
+    if (!confirm(`Associer ces ${suggestions.length} équipes à la bibliothèque ?\n${noms}`)) return;
     w(() => update(ref(db), Object.fromEntries(suggestions.flatMap(([id, [gid]]) =>
       Object.entries({ ...fromLib(libItems[gid]), lib: gid }).map(([k, v]) => [`${root}/${id}/${k}`, v])))));
   };
+  const dup = isLib || key !== "teams" ? null : mergeTeams(pub.teams, pub.matches);
+  const fusionner = () => {
+    const noms = dup.groups.map((g) => `${items[g.keep].nom} ×${g.drop.length + 1}`).join("\n");
+    if (!confirm(`Fusionner ces équipes en double ?\n${noms}\nOn garde la plus complète et les matchs sont rebranchés dessus.`)) return;
+    w(() => update(ref(db), prefixKeys(dup.updates, base())));
+  };
+
   const assoc = (id, o) => {
-    const cands = o.lib ? [] : libCandidates(o, libItems);
+    const linked = o.lib && libItems[o.lib];
+    const cands = new Set(libCandidates(o, libItems));
+    const q = normName(pickerQuery);
+    const choices = Object.entries(libItems)
+      .filter(([, l]) => !q || normName(l.nom).includes(q) || normName(l.complet ?? "").includes(q))
+      .sort((a, b) => (cands.has(b[0]) - cands.has(a[0])) || normName(a[1].nom).localeCompare(normName(b[1].nom)));
+    const open = pickerFor === `${root}/${id}`;
     return h("div", { class: "assoc" },
-      h("select", { title: "Associer à la bibliothèque : copie le logo, les couleurs et le nom complet", onchange: (e) => apply(id, e.target.value) },
-        optionsOf(libItems, o.lib, (l) => (l.complet ? `${l.nom} (${l.complet})` : l.nom), "Associer à la bibliothèque…")),
-      cands.slice(0, 3).map((gid) => btn(`Suggestion : ${libItems[gid].nom}`, () => apply(id, gid), "ok")),
-      o.lib && libItems[o.lib] && btn("↻ Resynchroniser", () => apply(id, o.lib)),
-      btn("→ Bibliothèque", () => versBiblio(id, o)));
+      linked
+        ? h("span", { class: "pill ok" }, `✔ Associée à « ${libItems[o.lib].nom}${libItems[o.lib].complet ? ` (${libItems[o.lib].complet})` : ""} »`)
+        : h("span", { class: "pill" }, o.lib ? "Non associée (l'équipe de la bibliothèque n'existe plus)" : "Non associée à la bibliothèque"),
+      btn(open ? "Fermer" : "Choisir dans la bibliothèque…", () => { pickerFor = open ? null : `${root}/${id}`; pickerQuery = ""; render(); }),
+      btn("Enregistrer dans la bibliothèque", () => versBiblio(id, o)),
+      (linked || o.lib) && btn("Dissocier", () => apply(id, null)),
+      open && h("div", { class: "picker" },
+        h("input", { type: "text", placeholder: "Rechercher dans la bibliothèque…", value: pickerQuery,
+          oninput: (e) => {
+            pickerQuery = e.target.value;
+            render();
+            const el = document.querySelector(".picker input");
+            el?.focus();
+            el?.setSelectionRange(el.value.length, el.value.length);
+          } }),
+        choices.length
+          ? choices.map(([gid, l]) => h("div", { class: "pick" },
+            logoImg(l.logo),
+            h("span", { class: "pick-name" }, l.nom, l.complet && h("small", {}, ` ${l.complet}`)),
+            cands.has(gid) && h("span", { class: "pill ok" }, "même nom"),
+            btn("Utiliser", () => { apply(id, gid); pickerFor = null; })))
+          : h("div", { class: "meta" }, libItems && Object.keys(libItems).length ? "Aucun résultat." : "La bibliothèque est vide.")));
   };
 
   return h("div", {},
     h("div", { class: "row", style: "margin:8px 0" },
       btn(`+ ${title}`, add, "ok"),
       isLib && !entries.length && btn("Charger les données de départ", loadSeed),
-      suggestions.length > 0 && btn(`Appliquer les ${suggestions.length} suggestions`, appliquerSuggestions, "ok"),
+      suggestions.length > 0 && btn(`Associer les ${suggestions.length} équipes qui ont le même nom`, appliquerSuggestions, "ok"),
+      dup?.groups.length > 0 && btn(`Fusionner les doublons (${dup.groups.length})`, fusionner, "ok"),
       entries.length > 0 && btn(sel.size === entries.length ? "Tout désélectionner" : "Tout sélectionner", () => {
         if (sel.size === entries.length) sel.clear(); else entries.forEach(([id]) => sel.add(id));
         render();
       }),
-      sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, supprimer, "bad")),
+      sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, () => supprimer([...sel]), "bad")),
     h("div", { class: "list" }, entries.map(([id, o]) => {
       const p = `${root}/${id}/`;
       return h("div", { class: "item" },
@@ -450,23 +528,28 @@ function collection({ key, title, fields, scope }) {
           h("input", { type: "color", title: "Secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
         ],
         logoInputs(`${p}logo`, o.logo),
-        btn("✕", () => { if (confirm(`Supprimer ${o.nom} ?`)) put(`${root}/${id}`, null); }, "bad"),
+        btn("✕", () => supprimer([id]), "bad"),
         !isLib && assoc(id, o));
     })));
 }
 
 /* ---------- Importer un horaire ---------- */
-const imp = { text: "", year: new Date().getFullYear(), dest: "current", newName: "Nouveau tournoi", result: null, glaces: {}, teams: [], teamMap: {}, full: new Map() };
+const imp = { text: "", year: new Date().getFullYear(), dest: "current", mode: "sync", newName: "Nouveau tournoi", result: null, glaces: {}, teams: [], teamMap: {}, full: new Map() };
 
 // Destination : le tournoi selectionne, ou un nouveau tournoi (sans equipes ni matchs : rien n'est associe a un autre tournoi).
 const toNew = () => imp.dest === "new" || !tid;
 const destTeams = () => (toNew() ? {} : pub.teams ?? {});
 const destMatches = () => (toNew() ? {} : pub.matches ?? {});
+// Matchs deja presents (meme numero) : "sync" (par defaut) les corrige et recree les equipes manquantes, "skip" les ignore.
+const syncing = (dupes) => !toNew() && dupes.length > 0 && imp.mode === "sync";
+const plan = (newId) => buildSync(imp.result.todo, imp.glaces, new Map(Object.entries(imp.teamMap)), newId,
+  { teams: destTeams(), fullNames: imp.full, existing: syncing(imp.result.dupes) ? destMatches() : null });
 
 function analyser() {
   const r = parseSchedule(imp.text, imp.year);
   const have = new Set(Object.values(destMatches()).map((m) => m.num));
-  imp.result = { ...r, todo: r.matches.filter((m) => !have.has(m.num)), dupes: r.matches.filter((m) => have.has(m.num)) };
+  const dupes = r.matches.filter((m) => have.has(m.num));
+  imp.result = { ...r, dupes, todo: syncing(dupes) ? r.matches : r.matches.filter((m) => !have.has(m.num)) };
   const lieux = [...new Set(imp.result.todo.map((m) => m.lieu))];
   imp.glaces = defaultGlaces(lieux);
   const idx = teamIndex(destTeams());
@@ -492,18 +575,16 @@ async function choisirFichier(e) {
 }
 
 async function lancerImport() {
-  const { todo } = imp.result;
   const isNew = toNew();
   const nid = isNew ? push(ref(db)).key : tid;
-  const rows = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key,
-    { teams: destTeams(), fullNames: imp.full });
+  const { updates: rows, stats } = plan(() => push(ref(db)).key);
   const updates = {
     ...prefixKeys(rows, `public/tournois/${nid}`),
     ...(isNew ? newTournament(nid, imp.newName.trim() || "Nouveau tournoi", Date.now()) : {}),
     ...(isNew && !actif ? { "public/actif": nid } : {}),
   };
   if (await w(() => update(ref(db), updates))) {
-    toast(`${todo.length} matchs importés`);
+    toast(`${stats.added} ajouté(s), ${stats.updated} mis à jour, ${stats.teamsCreated} équipe(s) créée(s).`);
     imp.text = "";
     imp.result = null;
     imp.dest = "current";
@@ -521,9 +602,22 @@ function importer() {
       h("td", {}, m.num), h("td", {}, m.date), h("td", {}, m.heure), h("td", {}, imp.glaces[m.lieu] ?? 1),
       h("td", {}, m.division), h("td", {}, m.round ?? ""), h("td", {}, m.away.nom ?? m.away.ref), h("td", {}, m.home.nom ?? m.home.ref))))));
 
+  const sync = !!r && !r.error && syncing(r.dupes);
+  const preview = r && !r.error && r.todo.length ? plan((() => { let i = 0; return () => `p${++i}`; })()) : null;
+  const st = preview?.stats;
+
   const resultat = !r ? null : r.error ? h("div", { class: "banner" }, r.error) : [
-    h("div", { class: "item" }, h("b", {}, `${r.todo.length} matchs à importer`),
-      h("span", { class: "meta" }, `${r.dupes.length} déjà dans le tournoi (même numéro, ignorés) · ${r.skipped.length} lignes ignorées`)),
+    h("div", { class: "item" }, h("b", {}, sync ? `${r.todo.length} matchs dans le fichier` : `${r.todo.length} matchs à importer`),
+      h("span", { class: "meta" }, `${sync ? "" : `${r.dupes.length} déjà dans le tournoi (même numéro, ignorés) · `}${r.skipped.length} lignes ignorées`)),
+    !toNew() && r.dupes.length > 0 && h("div", { class: "item" },
+      h("b", {}, `${r.dupes.length} matchs existent déjà (même numéro)`),
+      h("select", { onchange: (e) => { imp.mode = e.target.value; analyser(); } },
+        h("option", { value: "sync", selected: imp.mode === "sync" }, "Synchroniser : corriger date/heure, recréer les équipes manquantes, ne rien doubler"),
+        h("option", { value: "skip", selected: imp.mode !== "sync" }, "Ignorer ces matchs (n'ajouter que les nouveaux)"))),
+    st && h("div", { class: "item" }, h("b", {}, "Ce que l'import va faire"),
+      h("span", { class: "meta" }, `${st.added} matchs ajoutés · ${st.updated} mis à jour · ${st.unchanged} inchangés · ${st.teamsCreated} équipes créées · ${st.relinked} équipes rebranchées`
+        + (st.conflicts ? ` · ${st.conflicts} avec une autre équipe que celle du fichier (non modifiés)` : "")
+        + (st.ambiguous ? ` · ${st.ambiguous} ignorés car en double (nettoie d'abord les doublons)` : ""))),
     Object.keys(imp.glaces).length > 0 && h("div", { class: "item" }, h("b", {}, "Glace de chaque lieu"),
       Object.keys(imp.glaces).map((lieu) => h("label", {}, `${lieu || "(sans lieu)"} → `,
         h("select", { onchange: (e) => { imp.glaces[lieu] = Number(e.target.value); render(); } },
@@ -540,7 +634,7 @@ function importer() {
     r.skipped.length > 0 && h("details", { class: "item" }, h("summary", {}, "Lignes ignorées"),
       h("div", { class: "list" }, r.skipped.map((s) => h("div", { class: "meta" }, `Ligne ${s.line} (${s.reason}) : ${s.raw}`)))),
     apercu(r.todo),
-    r.todo.length > 0 && btn(`Importer ${r.todo.length} matchs`, lancerImport, "ok"),
+    r.todo.length > 0 && btn(sync ? `Synchroniser (${st.added} ajoutés, ${st.updated} mis à jour)` : `Importer ${r.todo.length} matchs`, lancerImport, "ok"),
   ];
 
   return h("div", { class: "list" },
@@ -589,19 +683,10 @@ function sauvegarde() {
       toast("Restauré");
     } catch (err) { toast(`Restauration impossible : ${err.message}`); }
   };
-  const supprimerTournoi = async () => {
-    if (!tid || !confirm(`Supprimer le tournoi « ${liste[tid]?.nom} » ? Ses équipes, commanditaires, matchs et notes seront effacés (les bibliothèques restent). Télécharge une sauvegarde avant. Irréversible.`)) return;
-    await w(() => update(ref(db), {
-      [`public/tournois/${tid}`]: null, [`public/liste/${tid}`]: null, [`prive/${tid}`]: null,
-      ...(actif === tid ? { "public/actif": null } : {}),
-    }));
-  };
   return h("div", { class: "list" },
     h("div", { class: "item" }, btn("Télécharger une sauvegarde (JSON)", exporter, "ok"),
       h("span", { class: "meta" }, "Tous les tournois, les bibliothèques et les notes privées. À faire avant chaque tournoi et à la fin de chaque journée.")),
     h("div", { class: "item" }, h("span", {}, "Restaurer depuis un fichier :"), h("input", { type: "file", accept: ".json", onchange: restaurer })),
-    tid && h("div", { class: "item" }, btn("Supprimer ce tournoi…", supprimerTournoi, "bad"),
-      h("span", { class: "meta" }, `« ${liste[tid]?.nom ?? ""} » : équipes, commanditaires, matchs et notes. Les bibliothèques ne sont pas touchées.`)),
     user && h("div", { class: "item" }, h("span", { class: "meta" }, "Ton UID (à coller dans database.rules.json) :"), h("code", {}, user.uid)));
 }
 
@@ -642,14 +727,37 @@ async function nouveauTournoi() {
   if (await w(() => update(ref(db), { ...newTournament(id, nom, Date.now()), ...(actif ? {} : { "public/actif": id }) }))) selectTournament(id);
 }
 
-function renommerTournoi() {
-  const nom = prompt("Nouveau nom du tournoi ?", liste[tid]?.nom ?? "")?.trim();
-  if (nom) w(() => update(ref(db), { [`public/tournois/${tid}/nom`]: nom, [`public/liste/${tid}/nom`]: nom }));
+const renommer = (id, nom) => {
+  const n = nom?.trim();
+  if (n) w(() => update(ref(db), { [`public/tournois/${id}/nom`]: n, [`public/liste/${id}/nom`]: n }));
+};
+const renommerTournoi = () => renommer(tid, prompt("Nouveau nom du tournoi ?", liste[tid]?.nom ?? ""));
+
+async function supprimerTournoi(id) {
+  if (!confirm(`Supprimer le tournoi « ${liste[id]?.nom} » ? Ses équipes, commanditaires, matchs et notes seront effacés (les bibliothèques restent). Télécharge une sauvegarde avant. Irréversible.`)) return;
+  await w(() => update(ref(db), {
+    [`public/tournois/${id}`]: null, [`public/liste/${id}`]: null, [`prive/${id}`]: null,
+    ...(actif === id ? { "public/actif": null } : {}),
+  }));
+}
+
+// Onglet Tournois : la liste de tous les tournois, avec renommer, ouvrir, activer et supprimer.
+function tournois() {
+  const ids = Object.keys(liste).sort((a, b) => (liste[b].cree ?? 0) - (liste[a].cree ?? 0));
+  return h("div", { class: "list" },
+    h("div", { class: "row", style: "margin:8px 0" }, btn("+ Nouveau tournoi", nouveauTournoi, "ok")),
+    ids.length
+      ? ids.map((id) => h("div", { class: "item" },
+        h("input", { type: "text", value: liste[id].nom ?? "", title: "Nom du tournoi", onchange: (e) => renommer(id, e.target.value) }),
+        id === actif ? h("span", { class: "pill ok" }, "★ actif (overlays)") : btn("★ Définir comme actif", () => put("public/actif", id)),
+        id === tid ? h("span", { class: "pill" }, "ouvert") : btn("Ouvrir", () => selectTournament(id)),
+        btn("Supprimer…", () => supprimerTournoi(id), "bad")))
+      : h("div", { class: "meta" }, "Aucun tournoi."));
 }
 
 /* ---------- squelette ---------- */
 const TABS = [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"],
-  ["sponsors", "Commanditaires"], ["biblio", "Bibliothèque"], ["sauvegarde", "Sauvegarde"]];
+  ["sponsors", "Commanditaires"], ["biblio", "Bibliothèque"], ["tournois", "Tournois"], ["sauvegarde", "Sauvegarde"]];
 let libTab = "teams";
 
 const noTournament = () => h("div", { class: "match-card empty" },
@@ -704,6 +812,7 @@ function render() {
     equipes: needT(() => collection({ key: "teams", title: "Équipe", fields: ["colors", "complet"], scope: "tournoi" })),
     sponsors: needT(() => collection({ key: "sponsors", title: "Commanditaire", fields: [], scope: "tournoi" })),
     biblio,
+    tournois,
     sauvegarde,
   };
   fill(document.getElementById("app"),

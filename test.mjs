@@ -304,4 +304,65 @@ assert.deepEqual(legacyMove(old, { teams: { a: { nom: "DEJA" } } }), {
 });
 assert.deepEqual(legacyMove({}, {}), {});
 
+/* ---------- Synchronisation, doublons, suppression ---------- */
+import { buildSync, duplicateTeams, mergeTeams, duplicateMatches, deleteMatches, restoreMatches } from "./logic.js";
+
+let sq = 0;
+const nid = () => `n${++sq}`;
+const F = (num, away, home, extra = {}) => ({ num, date: "2026-01-23", heure: "16:00", lieu: "", division: "",
+  away: away.startsWith("@") ? { ref: away.slice(1) } : { nom: away }, home: home.startsWith("@") ? { ref: home.slice(1) } : { nom: home }, ...extra });
+// Tournoi : l'equipe B a ete supprimee par erreur (m1 et m2 pointent vers "b", qui n'existe plus).
+const tt = { a: { nom: "A" }, c: { nom: "C" } };
+const exist = {
+  m1: { num: 1, date: "2026-01-23", heure: "16:00", away: "a", home: "b", awayScore: 3, sponsor: "s9", homeMode: "Secondary" },
+  m2: { num: 2, date: "2026-01-23", heure: "17:00", away: "b", home: "c" },
+  m3: { num: 3, date: "2026-01-23", heure: "16:00", awayRef: "GAGNANT #1", homeRef: "GAGNANT #2" },
+  m4: { num: 4, date: "2026-01-23", heure: "16:00", away: "a", home: "c" },
+};
+const sy = buildSync(
+  [F(1, "A", "B"), F(2, "B", "C", { heure: "17:30" }), F(3, "A", "@GAGNANT #2"), F(4, "A", "C"), F(5, "C", "A")],
+  {}, new Map([["A", "a"], ["C", "c"]]), nid, { teams: tt, existing: exist },
+);
+assert.deepEqual(sy.stats, { added: 1, updated: 3, unchanged: 1, relinked: 3, conflicts: 0, ambiguous: 0, teamsCreated: 1 });
+const bId = Object.entries(sy.updates).find(([k, v]) => k.startsWith("teams/") && v?.nom === "B")[0].slice(6);
+assert.equal(sy.updates["matches/m1/home"], bId); // equipe recreee, match rebranche
+assert.equal(sy.updates["matches/m1/homeRef"], null);
+assert.equal(sy.updates["matches/m2/away"], bId); // la meme equipe pour tous les matchs
+assert.equal(sy.updates["matches/m2/heure"], "17:30"); // horaire corrige
+assert.equal(sy.updates["matches/m3/away"], "a"); // un match a venir resolu dans le fichier
+assert.equal(sy.updates["matches/m3/awayRef"], null);
+assert.equal(sy.updates["matches/m3/homeRef"], undefined); // meme texte : rien a ecrire
+for (const f of ["awayScore", "sponsor", "homeMode"]) assert.equal(sy.updates[`matches/m1/${f}`], undefined); // jamais touches
+assert.equal(Object.keys(sy.updates).filter((k) => k.startsWith("matches/m4")).length, 0); // match deja correct : intact
+// Une equipe valide differente est signalee, pas remplacee ; des numeros en double ne sont pas devines.
+const cf = buildSync([F(4, "X", "C")], {}, new Map([["X", ""], ["C", "c"]]), nid, { teams: tt, existing: exist });
+assert.equal(cf.stats.conflicts, 1);
+assert.equal(Object.keys(cf.updates).filter((k) => k.startsWith("matches/")).length, 0);
+const am = buildSync([F(1, "A", "C")], {}, new Map([["A", "a"], ["C", "c"]]), nid, { teams: tt, existing: { x: { num: 1 }, y: { num: 1 } } });
+assert.equal(am.stats.ambiguous, 1);
+assert.deepEqual(am.updates, {});
+// Sans "existing" : comportement d'avant (tout est ajoute).
+assert.equal(buildSync([F(1, "A", "C")], {}, new Map([["A", "a"], ["C", "c"]]), nid, { teams: tt }).stats.added, 1);
+
+// Fusion d'equipes en double.
+const dupT = { x1: { nom: "Express", lib: "g" }, x2: { nom: "EXPRESS", logo: "L" }, x3: { nom: "Flyers" } };
+assert.deepEqual(duplicateTeams(dupT), [["x1", "x2"]]);
+const mg = mergeTeams(dupT, { m1: { away: "x2", home: "x3" }, m2: { away: "x1", home: "x2" } });
+assert.deepEqual(mg.groups, [{ keep: "x1", drop: ["x2"] }]); // celle qui a un lien est gardee
+assert.deepEqual(mg.updates, { "teams/x1/logo": "L", "teams/x2": null, "matches/m1/away": "x1", "matches/m2/home": "x1" });
+assert.deepEqual(mergeTeams({ a: { nom: "A" } }, {}), { updates: {}, groups: [] });
+
+// Matchs en double : on garde celui qui a des donnees ; les glaces suivent.
+const dm = duplicateMatches({ a: { num: 1 }, b: { num: 1, awayScore: 2 }, c: { num: 2 }, d: { num: 2 } }, { 1: { live: "a", next: "d" } });
+assert.deepEqual(dm.groups.map((g) => [g.num, g.keep, g.drop]), [[1, "a", ["b"]], [2, "d", ["c"]]]);
+assert.deepEqual(dm.updates, { "matches/b": null, "matches/c": null });
+const dp = duplicateMatches({ a: { num: 1 }, b: { num: 1 } }, { 1: { live: "a", next: "b" } });
+assert.deepEqual(dp.updates, { "matches/b": null, "glaces/1/next": "a" });
+assert.deepEqual(duplicateMatches({ a: { num: 1 }, b: { num: 2 } }, {}).groups, []);
+
+// Suppression et annulation.
+const gl = { 1: { live: "m1", next: "m2" } };
+assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glaces/1/live": null });
+assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
+
 console.log("tous les tests passent");
