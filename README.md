@@ -14,6 +14,17 @@ Pages statiques (GitHub Pages) + Firebase Realtime Database (forfait gratuit).
 
 Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://localhost:8080 (les modules JS ne marchent pas en `file://`).
 
+## Importer un horaire
+
+Onglet **Importer** : copier les cellules dans Excel ou Google Sheets (avec la ligne de titres), les coller, **Analyser**, vérifier l'aperçu, **Importer**.
+
+- Colonnes reconnues par leur titre : NO, DATE, HEURE, LIEU, DIVISION, VISITEUR, LOCAL (l'ordre n'a pas d'importance, les autres colonnes sont ignorées).
+- Dates acceptées : numéro Excel, `2026-03-19`, `19/03/2026`, `jeudi 19 mars` (année = champ Année).
+- Les noms d'équipes sont pris tels quels : `L'ESCOUADE 1 LES ÎLES` et `L'ESCOUADE 2 LES ÎLES` sont deux équipes. Une équipe déjà en base (même nom, sans tenir compte des majuscules, accents ou espaces) est réutilisée, sinon elle est créée. L'aperçu permet de choisir une autre équipe existante pour chaque nom.
+- `GAGNANT #22`, `PERDANT #22`, `3E POSITION` sont gardés comme texte : l'overlay les affiche tant que l'équipe n'est pas choisie (onglet Horaire, colonnes Visiteur et Local).
+- Les matchs dont le numéro existe déjà sont ignorés (pas de doublons si on réimporte).
+- **Vider l'horaire** efface matchs, caméramans et notes : télécharger une sauvegarde avant.
+
 ## Overlays
 
 `overlay.html?glace=1&mode=live` : partie en cours, avec scores.

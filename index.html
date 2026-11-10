@@ -12,7 +12,7 @@
   header h1 { font-size: 18px; margin: 0; flex: 1; }
   nav { display: flex; gap: 4px; padding: 8px 16px; flex-wrap: wrap; }
   main { padding: 8px 16px 40px; max-width: 1500px; margin: 0 auto; }
-  button, select, input { font: inherit; color: var(--tx); background: #0f172a; border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; }
+  button, select, input, textarea { font: inherit; color: var(--tx); background: #0f172a; border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; }
   button { cursor: pointer; } button:hover { border-color: var(--ac); }
   button.on, nav button.on { background: var(--ac); border-color: var(--ac); }
   button.ok { background: rgba(34,197,94,.15); border-color: var(--ok); color: var(--ok); }
@@ -69,7 +69,10 @@ import {
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "./firebase.js";
 import { h, fill } from "./dom.js";
-import { sortMatches, neighbor, following, statut, colorOf } from "./logic.js";
+import {
+  sortMatches, neighbor, following, statut, colorOf, sideName,
+  parseSchedule, uniqueTeams, teamIndex, buildUpdate,
+} from "./logic.js";
 import { TEAMS, SPONSORS } from "./seed.js";
 
 let pub = {};
@@ -89,17 +92,19 @@ const toast = (msg) => {
   toast.t = setTimeout(() => t.classList.remove("show"), 2500);
 };
 const w = async (fn) => {
-  try { await fn(); } catch (e) { toast(`Écriture refusée (${e.code ?? e.message}). Connecté et UID autorisé ?`); }
+  try { await fn(); return true; } catch (e) {
+    toast(`Écriture refusée (${e.code ?? e.message}). Connecté et UID autorisé ?`);
+    return false;
+  }
 };
 const put = (path, val) => w(() => set(ref(db, path), val === "" || val === undefined ? null : val));
 const btn = (label, fn, cls = "") => h("button", { class: cls, onclick: fn }, label);
 
 /* ---------- petits morceaux ---------- */
 const T = (id) => pub.teams?.[id];
-const teamName = (id) => T(id)?.nom ?? "?";
 const logoImg = (src) => (src ? h("img", { class: "logo", src, alt: "" }) : h("div", { class: "logo" }));
-const optionsOf = (obj, sel, label) => [
-  h("option", { value: "" }, "—"),
+const optionsOf = (obj, sel, label, empty = "—") => [
+  h("option", { value: "" }, empty),
   Object.entries(obj ?? {}).map(([id, o]) => h("option", { value: id, selected: id === sel }, label(o))),
 ];
 
@@ -131,7 +136,7 @@ function side(id, m, key) {
   const mp = `public/matches/${id}/`;
   return h("div", { class: "side" },
     logoImg(team?.logo),
-    h("b", {}, `${key === "away" ? "Visiteur" : "Local"} : ${team?.nom ?? "—"}`),
+    h("b", {}, `${key === "away" ? "Visiteur" : "Local"} : ${sideName(m, key, pub.teams) || "—"}`),
     h("div", { class: "score" },
       btn("−", () => put(`${mp}${key}Score`, Math.max(0, (score ?? 0) - 1))),
       h("span", {}, score ?? "–"),
@@ -165,7 +170,7 @@ function glaceCard(g) {
   const pick = (slot) => h("select", { onchange: (e) => put(gp + slot, e.target.value) },
     h("option", { value: "" }, "—"),
     list.map((m) => h("option", { value: m.id, selected: m.id === gl[slot] },
-      `#${m.num ?? "?"} ${m.heure ?? ""} ${teamName(m.away)} vs ${teamName(m.home)}`)));
+      `#${m.num ?? "?"} ${m.heure ?? ""} ${sideName(m, "away", pub.teams) || "?"} vs ${sideName(m, "home", pub.teams) || "?"}`)));
   const valider = () => {
     if (!gl.next) return toast("Aucun prochain match à valider");
     w(() => update(ref(db, `public/glaces/${g}`), { live: gl.next, next: following(list, gl.next) }));
@@ -205,8 +210,8 @@ function horaire() {
   const num = (path, val) =>
     h("input", { type: "number", min: 0, class: "n", value: val ?? "",
       onchange: (e) => put(path, e.target.value === "" ? null : Number(e.target.value)) });
-  const sel = (path, obj, cur, label) =>
-    h("select", { onchange: (e) => put(path, e.target.value) }, optionsOf(obj, cur, label));
+  const sel = (path, obj, cur, label, empty) =>
+    h("select", { onchange: (e) => put(path, e.target.value) }, optionsOf(obj, cur, label, empty));
 
   const tr = ({ m, st }) => {
     const mp = `public/matches/${m.id}/`;
@@ -219,9 +224,9 @@ function horaire() {
       h("td", {}, text(`${mp}heure`, m.heure, "time")),
       h("td", {}, text(`${mp}division`, m.division)),
       h("td", {}, text(`${mp}round`, m.round)),
-      h("td", {}, sel(`${mp}away`, pub.teams, m.away, (t) => t.nom)),
+      h("td", {}, sel(`${mp}away`, pub.teams, m.away, (t) => t.nom, m.awayRef ?? "—")),
       h("td", {}, num(`${mp}awayScore`, m.awayScore), " – ", num(`${mp}homeScore`, m.homeScore)),
-      h("td", {}, sel(`${mp}home`, pub.teams, m.home, (t) => t.nom)),
+      h("td", {}, sel(`${mp}home`, pub.teams, m.home, (t) => t.nom, m.homeRef ?? "—")),
       h("td", {}, sel(`${mp}sponsor`, pub.sponsors, m.sponsor, (s) => s.nom)),
       h("td", {}, text(`prive/${m.id}/camera`, pv.camera)),
       h("td", {}, text(`prive/${m.id}/note`, pv.note)),
@@ -261,6 +266,85 @@ function collection(key, title, fields, seed) {
     })));
 }
 
+/* ---------- Importer un horaire ---------- */
+const imp = { text: "", year: new Date().getFullYear(), result: null, glaces: {}, teams: [], teamMap: {} };
+
+function analyser() {
+  const r = parseSchedule(imp.text, imp.year);
+  const have = new Set(Object.values(pub.matches ?? {}).map((m) => m.num));
+  imp.result = { ...r, todo: r.matches.filter((m) => !have.has(m.num)), dupes: r.matches.filter((m) => have.has(m.num)) };
+  const lieux = [...new Set(imp.result.todo.map((m) => m.lieu))];
+  imp.glaces = Object.fromEntries(lieux.map((l, i) => [l, Math.min(i + 1, 2)]));
+  const idx = teamIndex(pub.teams);
+  imp.teams = uniqueTeams(imp.result.todo).map((t) => ({ ...t, id: idx.get(t.key) ?? "" }));
+  imp.teamMap = Object.fromEntries(imp.teams.map((t) => [t.key, t.id]));
+  render();
+}
+
+async function lancerImport() {
+  const { todo } = imp.result;
+  const updates = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key);
+  if (await w(() => update(ref(db, "public"), updates))) {
+    toast(`${todo.length} matchs importés`);
+    imp.text = "";
+    imp.result = null;
+    tab = "horaire";
+    render();
+  }
+}
+
+function vider() {
+  if (!confirm("Supprimer TOUT l'horaire (matchs, caméramans et notes) ? Télécharge une sauvegarde avant. Irréversible.")) return;
+  w(() => update(ref(db), {
+    "public/matches": null, "prive": null,
+    "public/glaces/1/live": null, "public/glaces/1/next": null,
+    "public/glaces/2/live": null, "public/glaces/2/next": null,
+  }));
+}
+
+function importer() {
+  const r = imp.result;
+  const apercu = (todo) => h("div", { class: "scroll" }, h("table", {},
+    h("thead", {}, h("tr", {}, ["#", "Date", "Heure", "Glace", "Div.", "Visiteur", "Local"].map((c) => h("th", {}, c)))),
+    h("tbody", {}, todo.map((m) => h("tr", {},
+      h("td", {}, m.num), h("td", {}, m.date), h("td", {}, m.heure), h("td", {}, imp.glaces[m.lieu] ?? 1),
+      h("td", {}, m.division), h("td", {}, m.away.nom ?? m.away.ref), h("td", {}, m.home.nom ?? m.home.ref))))));
+
+  const resultat = !r ? null : r.error ? h("div", { class: "banner" }, r.error) : [
+    h("div", { class: "item" }, h("b", {}, `${r.todo.length} matchs à importer`),
+      h("span", { class: "meta" }, `${r.dupes.length} déjà dans l'horaire (même numéro, ignorés) · ${r.skipped.length} lignes ignorées`)),
+    Object.keys(imp.glaces).length > 0 && h("div", { class: "item" }, h("b", {}, "Glace de chaque lieu"),
+      Object.keys(imp.glaces).map((lieu) => h("label", {}, `${lieu || "(sans lieu)"} → `,
+        h("select", { onchange: (e) => { imp.glaces[lieu] = Number(e.target.value); render(); } },
+          [1, 2].map((g) => h("option", { value: g, selected: imp.glaces[lieu] === g }, `Glace ${g}`)))))),
+    imp.teams.length > 0 && h("div", { class: "list" },
+      h("b", {}, `${imp.teams.length} équipes (noms pris tels quels dans l'horaire)`),
+      imp.teams.map((t) => h("div", { class: "item" },
+        h("b", {}, t.nom),
+        h("span", { class: "pill" }, imp.teamMap[t.key] ? "existe déjà" : "nouvelle"),
+        h("select", { onchange: (e) => { imp.teamMap[t.key] = e.target.value; render(); } },
+          optionsOf(pub.teams, imp.teamMap[t.key], (x) => x.nom, "Nouvelle équipe (créée)"))))),
+    r.skipped.length > 0 && h("details", { class: "item" }, h("summary", {}, "Lignes ignorées"),
+      h("div", { class: "list" }, r.skipped.map((s) => h("div", { class: "meta" }, `Ligne ${s.line} (${s.reason}) : ${s.raw}`)))),
+    apercu(r.todo),
+    r.todo.length > 0 && btn(`Importer ${r.todo.length} matchs`, lancerImport, "ok"),
+  ];
+
+  return h("div", { class: "list" },
+    h("div", { class: "item" },
+      h("textarea", {
+        rows: 8, style: "flex:1;min-width:280px",
+        placeholder: "Colle ici les cellules copiées depuis Excel ou Google Sheets, avec la ligne de titres (NO, DATE, HEURE, LIEU, DIVISION, VISITEUR, LOCAL).",
+        oninput: (e) => { imp.text = e.target.value; },
+      }, imp.text),
+      h("label", { class: "meta" }, "Année (si les dates n'en ont pas) ",
+        h("input", { type: "number", min: 2000, max: 2100, value: imp.year, onchange: (e) => { imp.year = Number(e.target.value); } })),
+      btn("Analyser", analyser, "ok")),
+    resultat,
+    h("div", { class: "item" }, btn("Vider l'horaire…", vider, "bad"),
+      h("span", { class: "meta" }, "Efface tous les matchs, caméramans et notes, pour commencer un nouveau tournoi.")));
+}
+
 /* ---------- Sauvegarde ---------- */
 function sauvegarde() {
   const exporter = () => {
@@ -289,7 +373,7 @@ function sauvegarde() {
 }
 
 /* ---------- squelette ---------- */
-const TABS = [["direct", "Direct"], ["horaire", "Horaire"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
+const TABS = [["direct", "Direct"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
 
 function render() {
   document.getElementById("conn").className = `badge${online ? " up" : ""}`;
@@ -300,6 +384,7 @@ function render() {
   const views = {
     direct,
     horaire,
+    importer,
     equipes: () => collection("teams", "Équipe", ["colors"], TEAMS),
     sponsors: () => collection("sponsors", "Commanditaire", [], SPONSORS),
     sauvegarde,
@@ -311,7 +396,7 @@ function render() {
 
 // Ne pas redessiner pendant qu'on tape dans un champ : on le fait en quittant le champ.
 const rerender = () => {
-  if (document.activeElement?.matches("input,select")) { dirty = true; return; }
+  if (document.activeElement?.matches("input,select,textarea")) { dirty = true; return; }
   render();
 };
 document.addEventListener("change", (e) => e.target.blur());

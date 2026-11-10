@@ -22,7 +22,7 @@
 <script type="module">
 import { db, ref, onValue } from "./firebase.js";
 import { h, fill } from "./dom.js";
-import { colorOf, scorebirdUrl } from "./logic.js";
+import { colorOf, scorebirdUrl, sideName } from "./logic.js";
 
 // ?glace=1&mode=live | next | url  (url = overlay Scorebird complet du match en cours)
 const p = new URLSearchParams(location.search);
@@ -41,7 +41,7 @@ function team(pub, m, key, withScore) {
   const mode_ = m[`${key}Mode`] ?? (key === "away" ? "Secondary" : "Primary");
   const row = h("div", { class: "team", style: `border-left-color:${colorOf(t, mode_)}` },
     t?.logo && h("img", { src: t.logo, alt: "" }),
-    h("span", { class: "n" }, t?.nom ?? ""),
+    h("span", { class: "n" }, sideName(m, key, pub.teams)),
     withScore && h("span", { class: "s" }, m[`${key}Score`] ?? 0));
   return row;
 }
