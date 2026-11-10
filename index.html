@@ -20,19 +20,68 @@
   .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid var(--bad); color: var(--bad); }
   .badge.up { border-color: var(--ok); color: var(--ok); }
   .banner { background: rgba(245,158,11,.12); border: 1px solid #f59e0b; color: #fbbf24; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
-  .glaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
-  .glace { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-  .glace h2 { margin: 0; font-size: 18px; display: flex; gap: 8px; align-items: center; }
-  .glace h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: 1.5px; color: var(--mut); }
-  .sb { width: 90px; }
-  .card { border: 1px solid var(--bd); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-  .card.empty { color: var(--mut); text-align: center; padding: 18px; }
   .meta { color: var(--mut); font-size: 12px; }
-  .side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .side b { flex: 1; min-width: 120px; }
-  .score { display: flex; align-items: center; gap: 6px; font: 700 22px ui-monospace, monospace; }
-  .score span { min-width: 28px; text-align: center; }
-  .modes { display: flex; gap: 2px; }
+  .page { display: flex; flex-direction: column; gap: 16px; }
+  .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .glace-title .arena { color: var(--mut); font-weight: 400; font-size: 14px; }
+  .spacer { flex: 1; }
+  .sb { width: 90px; }
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+  .panel-group { display: flex; flex-direction: column; gap: 10px; }
+  .panel { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; overflow: hidden; }
+  .panel-header { padding: 12px 18px; border-bottom: 1px solid var(--bd); display: flex; align-items: center; justify-content: space-between; }
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; }
+  .panel-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 5px; }
+  .panel-badge.live { background: rgba(239,68,68,.15); color: var(--bad); }
+  .panel-badge.next { background: rgba(34,197,94,.12); color: var(--ok); }
+  .match-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .match-card.empty { text-align: center; padding: 36px 18px; color: #64748b; }
+  .match-meta { display: flex; align-items: center; gap: 8px; color: var(--mut); font-size: 13px; flex-wrap: wrap; }
+  .tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(59,130,246,.12); color: var(--ac); }
+  .tag.round { background: rgba(245,158,11,.12); color: #f59e0b; }
+  .match-teams { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .team { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  .team-logo { width: 54px; height: 54px; border-radius: 50%; background: var(--bg); border: 3px solid var(--bd); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: var(--mut); overflow: hidden; }
+  .team-logo img { width: 100%; height: 100%; object-fit: cover; }
+  .team-name { font-size: 14px; font-weight: 600; text-align: center; line-height: 1.2; }
+  .score { display: flex; align-items: center; gap: 6px; }
+  .score-input { width: 56px; padding: 6px 4px; font: 700 22px ui-monospace, monospace; text-align: center; -moz-appearance: textfield; }
+  .score-input::-webkit-inner-spin-button, .score-input::-webkit-outer-spin-button, .score-input-sm::-webkit-inner-spin-button, .score-input-sm::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .score-sep { font: 700 24px ui-monospace, monospace; color: #64748b; align-self: center; }
+  .match-time { text-align: center; font-size: 13px; color: #64748b; }
+  .color-control { padding: 10px; background: rgba(255,255,255,.02); border: 1px solid var(--bd); border-radius: 10px; }
+  .color-control-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #64748b; margin-bottom: 8px; }
+  .color-teams { display: flex; gap: 10px; flex-wrap: wrap; }
+  .color-team-row { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: rgba(0,0,0,.2); border-radius: 8px; border: 1px solid var(--bd); }
+  .color-team-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .color-team-label { font-size: 10px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+  .color-team-name-label { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .color-mode-toggle { display: flex; }
+  .color-mode-toggle button { border-radius: 0; padding: 3px 9px; font-size: 11px; }
+  .color-mode-toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .color-mode-toggle button:last-child { border-radius: 0 6px 6px 0; }
+  .color-mode-toggle button.active { background: var(--ac); border-color: var(--ac); }
+  .sponsor-box { display: flex; gap: 8px; align-items: center; }
+  .sponsor-box img { max-height: 44px; max-width: 120px; object-fit: contain; }
+  .btn-full { width: 100%; padding: 10px; }
+  .schedule-panel { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; overflow: hidden; }
+  .schedule-header { padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--bd); flex-wrap: wrap; gap: 8px; }
+  .schedule-header h2 { margin: 0; font-size: 15px; }
+  .filter-tabs { display: flex; gap: 4px; }
+  .filter-tab { border: none; background: transparent; color: #64748b; font-weight: 600; padding: 5px 10px; }
+  .filter-tab.active { color: var(--tx); background: rgba(255,255,255,.08); }
+  .schedule-table tr.next td { background: rgba(34,197,94,.06); }
+  .mono { font-family: ui-monospace, monospace; color: #64748b; }
+  .strong { font-weight: 600; }
+  .mid { text-align: center; }
+  .score-input-sm { width: 40px; min-width: 0; padding: 4px 2px; font: 600 13px ui-monospace, monospace; text-align: center; }
+  .acts { display: flex; gap: 4px; }
+  .acts button { padding: 3px 8px; font-size: 12px; }
+  .pill.live { background: rgba(239,68,68,.2); color: var(--bad); }
+  .pill.upcoming { background: rgba(59,130,246,.12); color: var(--ac); }
+  .pill.done { color: #64748b; }
   input[type=color] { padding: 0; width: 34px; height: 28px; }
   .logo { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #0f172a; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -44,7 +93,6 @@
   td input, td select { width: 100%; min-width: 70px; }
   td input.n { width: 56px; min-width: 0; }
   .pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #1e293b; }
-  .pill.Live { background: rgba(239,68,68,.2); color: var(--bad); }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--bd); border-radius: 10px; padding: 8px; }
   .item input[type=text] { flex: 1; min-width: 140px; }
@@ -80,7 +128,7 @@ let pub = {};
 let priv = {};
 let user = null;
 let online = false;
-let tab = "direct";
+let tab = `glace${new URLSearchParams(location.search).get("glace") === "2" ? 2 : 1}`;
 let filtre = "Tous";
 let dirty = false;
 
@@ -129,32 +177,69 @@ const logoInputs = (path, logo) => [
     onchange: (e) => put(path, e.target.value.trim()) }),
 ];
 
-/* ---------- onglet Direct ---------- */
-function side(id, m, key) {
-  const team = T(m[key]);
-  const mode = m[`${key}Mode`] ?? (key === "away" ? "Secondary" : "Primary");
+/* ---------- Page d'une glace ---------- */
+const dateFR = (d, opts = { weekday: "long", day: "numeric", month: "long" }) => {
+  const dt = new Date(`${d}T12:00:00`);
+  return Number.isNaN(dt.getTime()) ? (d ?? "") : dt.toLocaleDateString("fr-CA", opts);
+};
+// Une couleur venant de la base n'entre dans un style qu'au format #rrggbb.
+const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c ?? "") ? c : "#666666");
+const defaultMode = (key) => (key === "away" ? "Secondary" : "Primary");
+
+function team(m, key, mp) {
+  const t = T(m[key]);
+  const color = safeColor(colorOf(t, m[`${key}Mode`] ?? defaultMode(key)));
+  const name = sideName(m, key, pub.teams) || "—";
   const score = m[`${key}Score`];
-  const mp = `public/matches/${id}/`;
-  return h("div", { class: "side" },
-    logoImg(team?.logo),
-    h("b", {}, `${key === "away" ? "Visiteur" : "Local"} : ${sideName(m, key, pub.teams) || "—"}`),
+  const setScore = (v) => put(`${mp}${key}Score`, v);
+  return h("div", { class: "team" },
+    h("div", { class: "team-logo", style: `border-color:${color};box-shadow:0 0 10px ${color}55` },
+      t?.logo ? h("img", { src: t.logo, alt: "" }) : name.charAt(0)),
+    h("div", { class: "team-name" }, name),
     h("div", { class: "score" },
-      btn("−", () => put(`${mp}${key}Score`, Math.max(0, (score ?? 0) - 1))),
-      h("span", {}, score ?? "–"),
-      btn("+", () => put(`${mp}${key}Score`, (score ?? 0) + 1))),
-    h("div", { class: "modes" },
-      ["Primary", "Secondary"].map((x) => btn(x === "Primary" ? "Pri" : "Sec", () => put(`${mp}${key}Mode`, x), mode === x ? "on" : ""))),
-    m[key] && h("input", { type: "color", value: colorOf(team, mode),
-      onchange: (e) => put(`public/teams/${m[key]}/${mode === "Primary" ? "primary" : "secondary"}`, e.target.value) }));
+      btn("−", () => setScore(Math.max(0, (score ?? 0) - 1))),
+      h("input", { type: "number", min: 0, class: "score-input", value: score ?? "", placeholder: "–",
+        onchange: (e) => setScore(e.target.value === "" ? null : Number(e.target.value)) }),
+      btn("+", () => setScore((score ?? 0) + 1))));
+}
+
+function colorControl(m, mp) {
+  const row = (key, label) => {
+    const mode = m[`${key}Mode`] ?? defaultMode(key);
+    return h("div", { class: "color-team-row" },
+      m[key] && h("input", { type: "color", value: safeColor(colorOf(T(m[key]), mode)),
+        onchange: (e) => put(`public/teams/${m[key]}/${mode === "Primary" ? "primary" : "secondary"}`, e.target.value) }),
+      h("div", { class: "color-team-info" },
+        h("span", { class: "color-team-label" }, label),
+        h("span", { class: "color-team-name-label" }, sideName(m, key, pub.teams) || "—")),
+      h("div", { class: "color-mode-toggle" },
+        ["Primary", "Secondary"].map((x) => btn(x === "Primary" ? "Pri" : "Sec", () => put(`${mp}${key}Mode`, x), mode === x ? "active" : ""))));
+  };
+  return h("div", { class: "color-control" },
+    h("div", { class: "color-control-title" }, "🎨 Couleurs"),
+    h("div", { class: "color-teams" }, row("away", "Visiteur"), row("home", "Local")));
 }
 
 function matchCard(id) {
   const m = pub.matches?.[id];
-  if (!m) return h("div", { class: "card empty" }, "Aucun match");
-  return h("div", { class: "card" },
-    h("div", { class: "meta" }, `#${m.num ?? "?"} · ${m.date ?? ""} ${m.heure ?? ""} · ${[m.division, m.round].filter(Boolean).join(" - ")}`),
-    side(id, m, "away"), side(id, m, "home"));
+  if (!m) return h("div", { class: "match-card empty" }, "Aucun match");
+  const mp = `public/matches/${id}/`;
+  const sponsor = pub.sponsors?.[m.sponsor];
+  return h("div", { class: "match-card" },
+    h("div", { class: "match-meta" },
+      m.division && h("span", { class: "tag" }, m.division),
+      m.round && h("span", { class: "tag round" }, m.round),
+      h("span", {}, `#${m.num ?? "?"}`)),
+    h("div", { class: "match-teams" }, team(m, "away", mp), h("div", { class: "score-sep" }, "–"), team(m, "home", mp)),
+    h("div", { class: "match-time" }, `${dateFR(m.date)} ${m.heure ?? ""}`),
+    colorControl(m, mp),
+    h("div", { class: "sponsor-box" },
+      sponsor?.logo && h("img", { src: sponsor.logo, alt: sponsor.nom ?? "" }),
+      h("select", { onchange: (e) => put(`${mp}sponsor`, e.target.value) }, optionsOf(pub.sponsors, m.sponsor, (s) => s.nom, "Commanditaire…"))));
 }
+
+const panel = (title, badge, cls, body) => h("div", { class: "panel" },
+  h("div", { class: "panel-header" }, h("div", { class: "section-label" }, title), h("div", { class: `panel-badge ${cls}` }, badge)), body);
 
 function overlayLinks(g) {
   const base = new URL("overlay.html", location.href).href;
@@ -164,31 +249,56 @@ function overlayLinks(g) {
     })));
 }
 
-function glaceCard(g) {
-  const gl = pub.glaces?.[g] ?? {};
-  const list = sortMatches(pub.matches, g);
+const PILL = { Live: "live", "À venir": "upcoming", "Complété": "done" };
+
+function schedule(g, list, gl) {
   const gp = `public/glaces/${g}/`;
-  const pick = (slot) => h("select", { onchange: (e) => put(gp + slot, e.target.value) },
-    h("option", { value: "" }, "—"),
-    list.map((m) => h("option", { value: m.id, selected: m.id === gl[slot] },
-      `#${m.num ?? "?"} ${m.heure ?? ""} ${sideName(m, "away", pub.teams) || "?"} vs ${sideName(m, "home", pub.teams) || "?"}`)));
+  const rows = list.map((m) => ({ m, st: statut(list, gl.live, m.id) })).filter((r) => filtre === "Tous" || r.st === filtre);
+  const score = (m, key) => h("input", { type: "number", min: 0, class: "score-input-sm", value: m[`${key}Score`] ?? "", placeholder: "–",
+    onchange: (e) => put(`public/matches/${m.id}/${key}Score`, e.target.value === "" ? null : Number(e.target.value)) });
+  return h("div", { class: "schedule-panel" },
+    h("div", { class: "schedule-header" }, h("h2", {}, "📋 Horaire"),
+      h("div", { class: "filter-tabs" }, ["Tous", "Live", "À venir", "Complété"].map((f) =>
+        h("button", { class: `filter-tab${filtre === f ? " active" : ""}`, onclick: () => { filtre = f; render(); } }, f)))),
+    h("div", { class: "scroll" }, h("table", { class: "schedule-table" },
+      h("thead", {}, h("tr", {}, ["#", "Date", "Heure", "Division", "Ronde", "Visiteur", "Score", "Local", "Statut", ""].map((c) => h("th", {}, c)))),
+      h("tbody", {}, rows.map(({ m, st }) => h("tr", { class: m.id === gl.next ? "next" : "" },
+        h("td", { class: "mono" }, m.num ?? ""),
+        h("td", {}, dateFR(m.date, { weekday: "short", day: "numeric", month: "short" })),
+        h("td", {}, m.heure ?? ""), h("td", {}, m.division ?? ""), h("td", {}, m.round ?? ""),
+        h("td", { class: "strong" }, sideName(m, "away", pub.teams)),
+        h("td", { class: "mid" }, score(m, "away"), " – ", score(m, "home")),
+        h("td", { class: "strong" }, sideName(m, "home", pub.teams)),
+        h("td", {}, h("span", { class: `pill ${PILL[st]}` }, st)),
+        h("td", { class: "acts" }, btn("En cours", () => put(`${gp}live`, m.id)), btn("Prochain", () => put(`${gp}next`, m.id)))))))));
+}
+
+function glacePage(g) {
+  const gl = pub.glaces?.[g] ?? {};
+  const gp = `public/glaces/${g}/`;
+  const list = sortMatches(pub.matches, g);
   const valider = () => {
     if (!gl.next) return toast("Aucun prochain match à valider");
     w(() => update(ref(db, `public/glaces/${g}`), { live: gl.next, next: following(list, gl.next) }));
   };
-  return h("section", { class: "glace" },
-    h("h2", {}, `Glace ${g}`, h("span", { class: "meta" }, "Scorebird"),
-      h("input", { class: "sb", value: gl.scorebird ?? "", placeholder: "serial", onchange: (e) => put(`${gp}scorebird`, e.target.value.trim()) })),
-    h("h3", {}, "EN COURS"), matchCard(gl.live), pick("live"),
-    h("h3", {}, "PROCHAIN"), matchCard(gl.next), pick("next"),
-    h("div", { class: "row" },
-      btn("◀ Précédent", () => put(`${gp}next`, neighbor(list, gl.next, -1))),
-      btn("Suivant ▶", () => put(`${gp}next`, neighbor(list, gl.next, 1))),
-      btn("✓ Valider", valider, "ok")),
-    overlayLinks(g));
+  return h("div", { class: "page" },
+    h("div", { class: "glace-title" },
+      h("div", { class: "icon" }, "🏒"), h("span", {}, `Glace ${g}`), h("span", { class: "arena" }, list[0]?.lieu ?? ""),
+      h("span", { class: "spacer" }),
+      h("label", { class: "meta" }, "Scorebird ",
+        h("input", { class: "sb", value: gl.scorebird ?? "", placeholder: "serial", onchange: (e) => put(`${gp}scorebird`, e.target.value.trim()) }))),
+    h("div", { class: "panels" },
+      h("div", { class: "panel-group" },
+        panel("🔴 Match en cours", "LIVE", "live", matchCard(gl.live)),
+        btn("✓ Valider", valider, "ok btn-full")),
+      h("div", { class: "panel-group" },
+        panel("⏭ Prochain sélectionné", "NEXT", "next", matchCard(gl.next)),
+        h("div", { class: "row" },
+          btn("◀ Précédent", () => put(`${gp}next`, neighbor(list, gl.next, -1))),
+          btn("Suivant ▶", () => put(`${gp}next`, neighbor(list, gl.next, 1)))))),
+    overlayLinks(g),
+    schedule(g, list, gl));
 }
-
-const direct = () => h("div", { class: "glaces" }, glaceCard(1), glaceCard(2));
 
 /* ---------- onglet Horaire ---------- */
 function horaire() {
@@ -391,16 +501,17 @@ function sauvegarde() {
 }
 
 /* ---------- squelette ---------- */
-const TABS = [["direct", "Direct"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
+const TABS = [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
 
 function render() {
   document.getElementById("conn").className = `badge${online ? " up" : ""}`;
   document.getElementById("conn").textContent = online ? "Connecté" : "Hors ligne";
   document.getElementById("user").replaceChildren(
     user ? btn("Déconnexion", () => signOut(auth)) : btn("Connexion Google", () => w(() => signInWithPopup(auth, new GoogleAuthProvider()))));
-  document.getElementById("tabs").replaceChildren(...TABS.map(([k, l]) => btn(l, () => { tab = k; render(); }, tab === k ? "on" : "")));
+  document.getElementById("tabs").replaceChildren(...TABS.map(([k, l]) => btn(l, () => { tab = k; history.replaceState(null, "", k.startsWith("glace") ? `?glace=${k.slice(5)}` : location.pathname); render(); }, tab === k ? "on" : "")));
   const views = {
-    direct,
+    glace1: () => glacePage(1),
+    glace2: () => glacePage(2),
     horaire,
     importer,
     equipes: () => collection("teams", "Équipe", ["colors"], TEAMS),
