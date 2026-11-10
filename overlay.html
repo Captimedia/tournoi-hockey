@@ -20,10 +20,10 @@
 <body>
 <div id="box"></div>
 <script type="module">
-import { db, ref, onValue } from "./firebase.js?v=1deeb4dd";
-import { h, fill, fallbackImg } from "./dom.js?v=1deeb4dd";
-import { colorOf, scorebirdUrl, sideName, rawUrl } from "./logic.js?v=1deeb4dd";
-import { graphiques } from "./config.js?v=1deeb4dd";
+import { db, ref, onValue } from "./firebase.js?v=5b8af9a8";
+import { h, fill, fallbackImg } from "./dom.js?v=5b8af9a8";
+import { colorOf, scorebirdUrl, sideName, rawUrl } from "./logic.js?v=5b8af9a8";
+import { graphiques } from "./config.js?v=5b8af9a8";
 
 // ?glace=1&mode=live | next | url  (url = overlay Scorebird complet du match en cours)
 // ?tournoi=ID fixe un tournoi ; sinon l'overlay suit le tournoi actif choisi dans le dashboard.
@@ -99,8 +99,21 @@ function watch(id) {
   }, () => { /* erreur reseau : on garde le dernier etat affiche */ });
 }
 
+// ?demo=1 : donnees d'exemple (aucune connexion), pour juger le rendu sans match en cours.
+const DEMO = {
+  teams: { a: { nom: "Express", primary: "#1d4ed8", secondary: "#e5e7eb" }, b: { nom: "Prédateurs", primary: "#b91c1c", secondary: "#f3f4f6" } },
+  sponsors: { s: { nom: "Commanditaire" } },
+  matches: {
+    m1: { num: 12, away: "a", home: "b", awayScore: 2, homeScore: 3, division: "U15", round: "Ronde 1", sponsor: "s" },
+    m2: { num: 13, away: "b", home: "a", date: "2027-01-23", heure: "16:00", division: "U15", round: "Ronde 1", sponsor: "s" },
+  },
+  glaces: { 1: { live: "m1", next: "m2" }, 2: { live: "m1", next: "m2" } },
+};
 const fixed = p.get("tournoi");
-if (fixed) {
+if (p.get("demo")) {
+  render(DEMO);
+} else if (fixed) {
+  watch(fixed);
   watch(fixed);
 } else {
   let last = null;

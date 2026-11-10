@@ -366,7 +366,7 @@ assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glac
 assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
 
 /* ---------- Galerie et envoi de logos ---------- */
-import { galleryItems, galleryRank, safeFileName, keepFileName, matchLogos, contentsDelete, contentsPut, githubError } from "./logic.js";
+import { galleryItems, galleryRank, safeFileName, keepFileName, matchLogos, retarget, contentsDelete, contentsPut, githubError } from "./logic.js";
 
 const tree = [
   { path: "graphiques/logos/Express.png", type: "blob" }, { path: "graphiques/logos/PredateursForillon.png", type: "blob" },
@@ -429,3 +429,8 @@ const imgs = [{ name: "Express.png", url: "u/Express.png" }, { name: "Predateurs
 const ml = matchLogos({ a: { nom: "Express", logo: "data:image/png;base64,xx" }, b: { nom: "Prédateurs", logo: "" }, c: { nom: "Vikings", logo: "data:x" }, d: { nom: "Express", logo: "https://ok/x.png" }, e: { nom: "X", complet: "express" } }, imgs);
 assert.deepEqual(ml, { a: "u/Express.png", e: "u/Express.png" }); // b : 2 candidats (Predateurs.png et Prédateurs.jpg) -> pas devine ; d : deja une adresse
 console.log("ok matchLogos");
+
+// Renommage d'une image : tous les logos qui pointaient vers l'ancienne adresse suivent (tournois et bibliotheques).
+const rt = retarget({ t1: { teams: { a: { logo: "old" }, b: { logo: "x" } }, sponsors: { s: { logo: "old" } } }, t2: { teams: { c: { logo: "old" } } } }, { teams: { g: { logo: "old" } } }, "old", "new");
+assert.deepEqual(rt, { "public/tournois/t1/teams/a/logo": "new", "public/tournois/t1/sponsors/s/logo": "new", "public/tournois/t2/teams/c/logo": "new", "public/lib/teams/g/logo": "new" });
+console.log("ok retarget");

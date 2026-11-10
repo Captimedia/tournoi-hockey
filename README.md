@@ -83,6 +83,8 @@ Onglet **Importer** : choisir un **fichier PDF, Excel (.xlsx) ou CSV**, ou copie
 `overlay.html?glace=1&mode=next` : prochain match.
 `overlay.html?glace=1&mode=url` : overlay Scorebird complet du match en cours (numéro Scorebird à entrer dans le dashboard).
 
+**Page de test** : `overlay-test.html` (bouton « 🧪 Tester les overlays » sur chaque page de glace) montre Live, Next et Scorebird en 16:9 sur damier, fond du tournoi ou vert ; choix de la glace et du tournoi, et « Données d'exemple » (`overlay.html?demo=1`) pour juger le rendu sans match. **Renommer une image** (✎, onglet Images) copie le fichier sous le nouveau nom, supprime l'ancien et fait suivre tous les logos qui l'utilisaient.
+
 Le dashboard a des boutons « Copier URL » pour chacun. L'overlay suit le tournoi actif ; `&tournoi=ID` fixe un tournoi précis.
 
 ## Données

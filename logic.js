@@ -529,6 +529,20 @@ export const matchLogos = (items, images) => {
   return out;
 };
 
+// Renommage d'une image : toutes les equipes/commanditaires (de chaque tournoi et des bibliotheques) qui pointaient vers l'ancienne
+// adresse pointent vers la nouvelle. Retourne des mises a jour a plat (chemin -> adresse) pour update(ref(db), ...).
+export const retarget = (tournois, lib, oldUrl, newUrl) => {
+  const up = {};
+  const scan = (prefix, coll) => {
+    for (const k of ["teams", "sponsors"]) {
+      for (const [id, o] of Object.entries(coll?.[k] ?? {})) if (o?.logo === oldUrl) up[`${prefix}${k}/${id}/logo`] = newUrl;
+    }
+  };
+  for (const [tid, t] of Object.entries(tournois ?? {})) scan(`public/tournois/${tid}/`, t);
+  scan("public/lib/", lib);
+  return up;
+};
+
 // Nom du fichier tel que choisi par l'utilisateur (base conservee, accents et espaces compris). L'image est reencodee en PNG :
 // l'extension devient .png seulement si l'original n'en etait pas un. Jamais un nom deja pris (casse ignoree) -> suffixe -2, -3...
 export const keepFileName = (original, taken) => {

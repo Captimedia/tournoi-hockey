@@ -5,7 +5,7 @@ import {
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { firebaseConfig } from "./config.js?v=1deeb4dd";
+import { firebaseConfig } from "./config.js?v=5b8af9a8";
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);

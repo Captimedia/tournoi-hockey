@@ -1,7 +1,7 @@
 // Acces a GitHub depuis le navigateur : liste des images du dossier graphiques/ (lecture publique, sans jeton)
 // et envoi d'un logo (avec le jeton de l'utilisateur, jamais ecrit dans un message ni dans le code).
-import { graphiques } from "./config.js?v=1deeb4dd";
-import { contentsPut, contentsDelete, githubError } from "./logic.js?v=1deeb4dd";
+import { graphiques } from "./config.js?v=5b8af9a8";
+import { contentsPut, contentsDelete, githubError } from "./logic.js?v=5b8af9a8";
 
 const KEY = "tournoi-galerie";
 const TTL = 10 * 60 * 1000; // l'API publique limite a 60 lectures par heure et par adresse internet : on garde la liste 10 minutes
@@ -38,6 +38,18 @@ export async function deleteImage(token, path, sha) {
   if (r.status !== 200) throw new Error(githubError(r.status));
   const c = read();
   if (c) write(c.tree.filter((x) => x.path !== path));
+}
+
+// Renomme une image : GitHub n'a pas de renommage, donc copie sous le nouveau nom (jamais par-dessus un fichier : pas de sha)
+// puis suppression de l'ancienne. Si la copie echoue, rien n'est supprime. Retourne l'adresse publique du nouveau fichier.
+export async function renameImage(token, folder, oldName, sha, newName) {
+  const h = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+  const b = await fetch(`https://api.github.com/repos/${graphiques.owner}/${graphiques.repo}/git/blobs/${sha}`, { headers: h });
+  if (!b.ok) throw new Error(githubError(b.status));
+  const url = await publishImage(token, folder, newName, (await b.json()).content.replace(/\s/g, ""));
+  await deleteImage(token, `${graphiques.dossier}/${folder}/${oldName}`, sha);
+  addToCache(`${graphiques.dossier}/${folder}/${newName}`);
+  return url;
 }
 
 // Cree un NOUVEAU fichier (jamais de remplacement : pas de "sha"). Retourne son adresse publique.

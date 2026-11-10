@@ -178,18 +178,18 @@
 import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-} from "./firebase.js?v=1deeb4dd";
-import { h, fill, fallbackImg } from "./dom.js?v=1deeb4dd";
+} from "./firebase.js?v=5b8af9a8";
+import { h, fill, fallbackImg } from "./dom.js?v=5b8af9a8";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
-  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, matchLogos, rawUrl,
-} from "./logic.js?v=1deeb4dd";
-import { readScheduleFile } from "./import-file.js?v=1deeb4dd";
-import { loadTree, addToCache, publishImage, deleteImage, testToken } from "./galerie.js?v=1deeb4dd";
-import { graphiques } from "./config.js?v=1deeb4dd";
-import { TEAMS, SPONSORS } from "./seed.js?v=1deeb4dd";
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, keepFileName, matchLogos, retarget, rawUrl,
+} from "./logic.js?v=5b8af9a8";
+import { readScheduleFile } from "./import-file.js?v=5b8af9a8";
+import { loadTree, addToCache, publishImage, deleteImage, renameImage, testToken } from "./galerie.js?v=5b8af9a8";
+import { graphiques } from "./config.js?v=5b8af9a8";
+import { TEAMS, SPONSORS } from "./seed.js?v=5b8af9a8";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};
@@ -325,10 +325,10 @@ const panel = (title, badge, cls, body) => h("div", { class: "panel" },
 
 function overlayLinks(g) {
   const base = new URL("overlay.html", location.href).href;
-  return h("div", { class: "row" }, [["Live", "live"], ["Next", "next"], ["Scorebird", "url"]].map(([label, mode]) =>
+  return h("div", { class: "row" }, [...[["Live", "live"], ["Next", "next"], ["Scorebird", "url"]].map(([label, mode]) =>
     btn(`Copier URL ${label}`, async () => {
       try { await navigator.clipboard.writeText(`${base}?glace=${g}&mode=${mode}`); toast("URL copiée"); } catch { toast("Copie impossible"); }
-    })));
+    })), h("a", { href: `overlay-test.html?glace=${g}${tid ? `&tournoi=${tid}` : ""}`, target: "_blank", class: "uploadbtn", style: "text-align:center;text-decoration:none;color:inherit" }, "🧪 Tester les overlays")]);
 }
 
 const PILL = { Live: "live", "À venir": "upcoming", "Complété": "done" };
@@ -789,6 +789,29 @@ async function supprimerImage(it, usedBy) {
   render();
 }
 
+async function renommerImage(it, folder) {
+  const ext = it.name.match(/\.[^.]+$/)?.[0] ?? ".png";
+  const stem = prompt("Nouveau nom de l'image (sans l'extension) ?", it.name.slice(0, it.name.length - ext.length))?.trim();
+  if (!stem || `${stem}${ext}` === it.name) return;
+  if (/[\\/]/.test(stem)) return toast("Le nom ne peut pas contenir / ou \\.");
+  const newName = `${stem}${ext}`;
+  const pris = (gal.tree ?? []).filter((x) => x.path.startsWith(`${graphiques.dossier}/${folder}/`) && x.path !== it.path).map((x) => x.path.split("/").pop().toLowerCase());
+  if (pris.includes(newName.toLowerCase())) return toast("Une image porte déjà ce nom.");
+  let token = null;
+  try { token = (await get(ref(db, "secret/github"))).val()?.token ?? null; } catch { token = null; }
+  if (!token) return toast("Enregistre d'abord ton jeton GitHub (onglet Sauvegarde).");
+  try {
+    toast("Renommage en cours…");
+    const url = await renameImage(token, folder, it.name, it.sha, newName);
+    const tournois = (await get(ref(db, "public/tournois"))).val();
+    const up = retarget(tournois, lib, it.url, url);
+    if (Object.keys(up).length) await update(ref(db), up);
+    gal.tree = await loadTree();
+    toast(`Renommée : ${newName}${Object.keys(up).length ? ` (${Object.keys(up).length} logo(s) mis à jour)` : ""}`);
+  } catch (e) { toast(e.message); }
+  render();
+}
+
 function images() {
   if (!gal.tree && !gal.loading && !gal.error) loadGallery();
   const sections = [["logos", "Logos d'équipes"], ["commanditaires", "Commanditaires"]];
@@ -823,6 +846,7 @@ function images() {
             h("span", {}, it.name.replace(/\.[^.]+$/, "")),
             h("div", { class: "acts" },
               h("button", { title: "Copier l'adresse", onclick: () => navigator.clipboard.writeText(it.url).then(() => toast("Adresse copiée")) }, "📋"),
+              h("button", { title: "Renommer cette image (les logos qui l'utilisent suivent)", onclick: () => renommerImage(it, folder) }, "✎"),
               h("button", { class: "bad", title: "Supprimer cette image", onclick: () => supprimerImage(it, users(it.url)) }, "✕")))))
           : h("div", { class: "meta" }, "Aucune image.")));
     }));

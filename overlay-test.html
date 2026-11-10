@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test des overlays</title>
+<style>
+  :root { --bg: #0b1220; --card: #111a2e; --bd: #1f2a44; --tx: #e5e7eb; --mut: #94a3b8; --ac: #3b82f6; }
+  body { margin: 0; background: var(--bg); color: var(--tx); font: 14px system-ui, sans-serif; }
+  header, .bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--bd); }
+  h1 { font-size: 16px; margin: 0; }
+  select, button, a.b { background: var(--card); color: var(--tx); border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; font: inherit; text-decoration: none; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; max-width: 1700px; margin: 0 auto; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+  .lbl { font-size: 11px; letter-spacing: 1.5px; color: var(--mut); margin-bottom: 6px; }
+  .frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--bd); border-radius: 8px; background-size: cover; background-position: center; }
+  .frame iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: top left; background: transparent; }
+  .frame[data-bg=damier] { background: repeating-conic-gradient(#1b2336 0% 25%, #141a29 0% 50%) 50% / 24px 24px; }
+  .frame[data-bg=vert] { background: #00b140; }
+  .frame[data-bg=fond] { background-image: url("graphiques/divers/Fond.png"); }
+  .url { color: var(--mut); font-size: 11px; word-break: break-all; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header><h1>🧪 Test des overlays</h1><a class="b" href="index.html">← Retour au dashboard</a></header>
+<div class="bar" id="bar"></div>
+<div class="grid" id="grid"></div>
+<script type="module">
+import { db, ref, onValue } from "./firebase.js?v=5b8af9a8";
+import { h, fill } from "./dom.js?v=5b8af9a8";
+
+const p = new URLSearchParams(location.search);
+const st = { glace: p.get("glace") === "2" ? "2" : "1", tournoi: p.get("tournoi") ?? "", demo: p.get("demo") === "1", bg: "damier", liste: {} };
+const bar = document.getElementById("bar");
+const grid = document.getElementById("grid");
+const frames = {};
+
+const urlOf = (mode) => {
+  const q = new URLSearchParams({ glace: st.glace, mode });
+  if (st.demo) q.set("demo", "1"); else if (st.tournoi) q.set("tournoi", st.tournoi);
+  return new URL(`overlay.html?${q}`, location.href).href;
+};
+
+function build() {
+  for (const [mode, titre] of [["live", "LIVE"], ["next", "NEXT"], ["url", "SCOREBIRD (match en cours)"]]) {
+    const iframe = h("iframe", { title: titre, tabindex: "-1", allow: "autoplay" });
+    const frame = h("div", { class: "frame" }, iframe);
+    const url = h("div", { class: "url" });
+    const rescale = () => { iframe.style.transform = `scale(${frame.clientWidth / 1920})`; };
+    new ResizeObserver(rescale).observe(frame);
+    grid.append(h("div", {}, h("div", { class: "lbl" }, titre), frame, url));
+    frames[mode] = { iframe, frame, url };
+  }
+}
+
+function update() {
+  fill(bar,
+    h("label", {}, "Glace ", h("select", { onchange: (e) => { st.glace = e.target.value; update(); } },
+      ["1", "2"].map((g) => h("option", { value: g, selected: g === st.glace }, `Glace ${g}`)))),
+    h("label", {}, "Tournoi ", h("select", { disabled: st.demo, onchange: (e) => { st.tournoi = e.target.value; update(); } },
+      h("option", { value: "" }, "Tournoi actif"),
+      Object.entries(st.liste).map(([id, t]) => h("option", { value: id, selected: id === st.tournoi }, t.nom)))),
+    h("label", {}, h("input", { type: "checkbox", checked: st.demo, onchange: (e) => { st.demo = e.target.checked; update(); } }), " Données d'exemple"),
+    h("label", {}, "Fond ", h("select", { onchange: (e) => { st.bg = e.target.value; update(); } },
+      [["damier", "Damier (transparence)"], ["fond", "Fond du tournoi"], ["vert", "Vert (chroma)"]].map(([v, l]) => h("option", { value: v, selected: v === st.bg }, l)))),
+    h("button", { onclick: () => Object.values(frames).forEach((f) => { f.iframe.src = f.iframe.dataset.url; }) }, "↻ Recharger"));
+  for (const [mode, f] of Object.entries(frames)) {
+    const url = urlOf(mode);
+    f.frame.dataset.bg = mode === "url" ? "damier" : st.bg;
+    if (f.iframe.dataset.url !== url) { f.iframe.dataset.url = url; f.iframe.src = url; }
+    f.url.textContent = url;
+  }
+}
+
+build();
+update();
+onValue(ref(db, "public/liste"), (s) => { st.liste = s.val() ?? {}; update(); }, () => { /* lecture refusee : la liste reste vide */ });
+</script>
+</body>
+</html>
