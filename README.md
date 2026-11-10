@@ -30,6 +30,9 @@ Onglet **Importer** : choisir un **fichier PDF, Excel (.xlsx) ou CSV**, ou copie
 - `.gitignore` empêche de publier par erreur des PDF, Excel ou CSV (fichiers clients).
 
 - Colonnes reconnues par leur titre : NO, DATE, HEURE, LIEU, DIVISION, VISITEUR, LOCAL (l'ordre n'a pas d'importance, les autres colonnes sont ignorées).
+- Deuxième format reconnu : un horaire « en texte » par journée, sans colonnes DATE / HEURE. Un titre de jour (`Vendredi 23 janvier`) donne la date des matchs en dessous, chaque match est `Équipe A | vs | Équipe B | 16h | POOL 2` (le type va dans la Ronde). Pas de numéros dans ce format : les matchs sont numérotés dans l'ordre du fichier.
+- Sans année dans la date, le jour de la semaine choisit l'année (le 23 janvier est un vendredi en 2026).
+- Matchs à venir reconnus comme texte : `GAGNANT #22`, `PERDANT #22`, `Gagnant QF1`, `3e pool 1`, `3E POSITION`, `TBD`.
 - Dates acceptées : numéro Excel, `2026-03-19`, `19/03/2026`, `jeudi 19 mars` (année = champ Année).
 - Les noms d'équipes sont pris tels quels : `L'ESCOUADE 1 LES ÎLES` et `L'ESCOUADE 2 LES ÎLES` sont deux équipes. Une équipe déjà en base (même nom, sans tenir compte des majuscules, accents ou espaces) est réutilisée, sinon elle est créée. L'aperçu permet de choisir une autre équipe existante pour chaque nom.
 - `GAGNANT #22`, `PERDANT #22`, `3E POSITION` sont gardés comme texte : l'overlay les affiche tant que l'équipe n'est pas choisie (onglet Horaire, colonnes Visiteur et Local).

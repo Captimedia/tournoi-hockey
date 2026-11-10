@@ -429,10 +429,10 @@ function vider() {
 function importer() {
   const r = imp.result;
   const apercu = (todo) => h("div", { class: "scroll" }, h("table", {},
-    h("thead", {}, h("tr", {}, ["#", "Date", "Heure", "Glace", "Div.", "Visiteur", "Local"].map((c) => h("th", {}, c)))),
+    h("thead", {}, h("tr", {}, ["#", "Date", "Heure", "Glace", "Div.", "Ronde", "Visiteur", "Local"].map((c) => h("th", {}, c)))),
     h("tbody", {}, todo.map((m) => h("tr", {},
       h("td", {}, m.num), h("td", {}, m.date), h("td", {}, m.heure), h("td", {}, imp.glaces[m.lieu] ?? 1),
-      h("td", {}, m.division), h("td", {}, m.away.nom ?? m.away.ref), h("td", {}, m.home.nom ?? m.home.ref))))));
+      h("td", {}, m.division), h("td", {}, m.round ?? ""), h("td", {}, m.away.nom ?? m.away.ref), h("td", {}, m.home.nom ?? m.home.ref))))));
 
   const resultat = !r ? null : r.error ? h("div", { class: "banner" }, r.error) : [
     h("div", { class: "item" }, h("b", {}, `${r.todo.length} matchs à importer`),

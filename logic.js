@@ -71,6 +71,8 @@ const MONTHS = Object.fromEntries(
   ].flatMap(([n, names]) => names.split(" ").map((w) => [w, n])),
 );
 
+const WEEKDAYS = { dimanche: 0, lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6 };
+
 const isoDate = (y, m, d) => {
   const dt = new Date(Date.UTC(y, m - 1, d));
   const ok = dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
@@ -89,8 +91,14 @@ export const parseDate = (raw, defaultYear) => {
   if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return isoDate(+m[1], +m[2], +m[3]);
   if ((m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/))) return isoDate(+m[3], +m[2], +m[1]);
   if ((m = s.match(/^([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/)) && MONTHS[m[1]]) return isoDate(+m[3], MONTHS[m[1]], +m[2]);
-  if ((m = s.match(/^(?:[a-z]+\s+)?(\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?$/)) && MONTHS[m[2]]) {
-    return isoDate(m[3] ? +m[3] : defaultYear, MONTHS[m[2]], +m[1]);
+  if ((m = s.match(/^(?:([a-z]+)\s+)?(\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?$/)) && MONTHS[m[3]]) {
+    const mo = MONTHS[m[3]];
+    const d = +m[2];
+    if (m[4]) return isoDate(+m[4], mo, d);
+    // Sans annee, le jour de la semaine ("vendredi 23 janvier") dit laquelle des annees voisines est la bonne.
+    const wd = WEEKDAYS[m[1]];
+    const y = wd === undefined ? defaultYear : [defaultYear, defaultYear + 1, defaultYear - 1].find((yy) => new Date(Date.UTC(yy, mo - 1, d)).getUTCDay() === wd);
+    return isoDate(y ?? defaultYear, mo, d);
   }
   return null;
 };
@@ -115,13 +123,14 @@ export const parseTime = (raw) => {
   return null;
 };
 
-// "GAGNANT #22", "PERDANT 53", "3E POSITION", "TBD" : le match n'a pas encore ses equipes.
+// "GAGNANT #22", "PERDANT 53", "Gagnant QF1", "3E POSITION", "3e pool 1", "TBD" : le match n'a pas encore ses equipes.
 export const placeholder = (raw) => {
   const s = normName(raw);
   let m;
   if (s === "TBD" || s === "A DETERMINER") return "À DÉTERMINER";
   if ((m = s.match(/^(GAGNANT|PERDANT) ?#? ?(\d+)$/))) return `${m[1]} #${m[2]}`;
-  if (/^\d+(ER|ERE|E|EME) POSITION$/.test(s)) return String(raw).trim().replace(/\s+/g, " ").toUpperCase();
+  if ((m = s.match(/^(GAGNANT|PERDANT) ([A-Z]{1,4}) ?(\d+)$/))) return `${m[1]} ${m[2]}${m[3]}`;
+  if (/^\d+(ER|ERE|E|EME) [A-Z0-9 ]+$/.test(s)) return String(raw).trim().replace(/\s+/g, " ").toUpperCase();
   return null;
 };
 
@@ -131,6 +140,7 @@ const COLS = {
   heure: ["HEURE", "TIME"],
   lieu: ["LIEU", "ARENA", "ARENAS", "GLACE", "ENDROIT", "SITE"],
   division: ["DIVISION", "CATEGORIE"],
+  round: ["RONDE", "ROUND", "TYPE", "PHASE"],
   away: ["VISITEUR", "VISITEURS", "AWAY"],
   home: ["LOCAL", "LOCAUX", "HOME", "DOMICILE"],
 };
@@ -138,6 +148,37 @@ const headerKey = (c) => normName(c).replace(/[.°]/g, "");
 const side = (text) => {
   const ref = placeholder(text);
   return ref ? { ref } : { nom: text };
+};
+
+// Horaire "en texte", par journee : une ligne de titre avec la date ("Vendredi 23 janvier"), puis
+// "Equipe A | vs | Equipe B | 16h | POOL 2". Pas de numero de match : numerotes dans l'ordre du fichier.
+const parseVsFormat = (rows, defaultYear) => {
+  let date = null;
+  const matches = [];
+  const skipped = [];
+  rows.forEach((r, i) => {
+    const cells = r.map((c) => c.trim().replace(/\s+/g, " "));
+    const k = cells.findIndex((c) => ["VS", "VS."].includes(normName(c)));
+    if (k === -1) {
+      const first = cells.find(Boolean);
+      date = (first && parseDate(first, defaultYear)) || date;
+      return;
+    }
+    const away = cells.slice(0, k).reverse().find(Boolean);
+    const rest = cells.slice(k + 1);
+    const hi = rest.findIndex(Boolean);
+    const home = rest[hi];
+    const after = rest.slice(hi + 1);
+    const ti = after.findIndex((c) => parseTime(c));
+    const heure = ti === -1 ? null : parseTime(after[ti]);
+    const round = ti === -1 ? "" : (after.slice(ti + 1).find(Boolean) ?? "");
+    if (away && home && heure && date) {
+      matches.push({ num: matches.length + 1, date, heure, lieu: "", division: "", ...(round && { round }), away: side(away), home: side(home) });
+    } else {
+      skipped.push({ line: i + 1, raw: cells.filter(Boolean).join(" | "), reason: date ? "pas un match reconnu" : "pas de date (ligne de jour manquante)" });
+    }
+  });
+  return { matches, skipped };
 };
 
 // `text` : cellules collees (colonnes separees par des tabulations). Retourne { matches, skipped, error? }.
@@ -148,7 +189,10 @@ export const parseSchedule = (text, defaultYear) => {
     return k.includes("DATE") && k.includes("HEURE");
   });
   const fail = (error) => ({ error, matches: [], skipped: [] });
-  if (hi === -1) return fail("Ligne de titres introuvable : il faut au moins les colonnes DATE et HEURE.");
+  if (hi === -1) {
+    const alt = parseVsFormat(rows, defaultYear);
+    return alt.matches.length ? alt : fail("Horaire non reconnu : il faut des colonnes DATE et HEURE, ou des lignes « Équipe A vs Équipe B » sous un titre de jour.");
+  }
 
   const keys = rows[hi].map(headerKey);
   const idx = Object.fromEntries(Object.entries(COLS).map(([f, names]) => [f, keys.findIndex((k) => names.includes(k))]));
@@ -169,7 +213,8 @@ export const parseSchedule = (text, defaultYear) => {
     const away = cell(r, "away");
     const home = cell(r, "home");
     if (/^\d+$/.test(num) && date && heure && away && home) {
-      const match = { num: Number(num), date, heure, lieu: cell(r, "lieu"), division: cell(r, "division"), away: side(away), home: side(home) };
+      const round = cell(r, "round");
+      const match = { num: Number(num), date, heure, lieu: cell(r, "lieu"), division: cell(r, "division"), ...(round && { round }), away: side(away), home: side(home) };
       const key = JSON.stringify(match);
       if (!seen.has(num)) {
         seen.set(num, key);
@@ -222,6 +267,7 @@ export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId) => {
     const rec = { num: m.num, glace: glaceByLieu[m.lieu] ?? 1, date: m.date, heure: m.heure };
     if (m.lieu) rec.lieu = m.lieu;
     if (m.division) rec.division = m.division;
+    if (m.round) rec.round = m.round;
     for (const k of ["away", "home"]) {
       if (m[k].ref) rec[`${k}Ref`] = m[k].ref;
       else rec[k] = idFor(m[k].nom);

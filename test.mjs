@@ -45,7 +45,11 @@ import { parseDate, parseTime, placeholder, parseSchedule, uniqueTeams, teamInde
 assert.equal(parseDate("46100", 2030), "2026-03-19"); // numero de serie Excel
 assert.equal(parseDate("2026-03-19"), "2026-03-19");
 assert.equal(parseDate("19/03/2026"), "2026-03-19");
-assert.equal(parseDate("jeudi 19 mars", 2027), "2027-03-19");
+assert.equal(parseDate("jeudi 19 mars", 2026), "2026-03-19");
+// Le jour de la semaine corrige l'annee : le 19 mars est un jeudi en 2026, pas en 2027.
+assert.equal(parseDate("jeudi 19 mars", 2027), "2026-03-19");
+assert.equal(parseDate("vendredi 23 janvier", 2026), "2026-01-23");
+assert.equal(parseDate("19 mars", 2027), "2027-03-19"); // sans jour de semaine : l'annee demandee
 assert.equal(parseDate("1er avril 2026"), "2026-04-01");
 assert.equal(parseDate("30 février 2026"), null); // date impossible
 assert.equal(parseDate("n'importe quoi"), null);
@@ -88,7 +92,7 @@ assert.deepEqual(parsed.matches[3].home, { ref: "1ÈRE POSITION" });
 // Les titres de jour sont ignores en silence ; l'evenement et le doublon sont signales.
 assert.deepEqual(parsed.skipped.map((s) => s.reason), ["pas un match reconnu", "numéro en double"]);
 
-assert.match(parseSchedule("rien", 2026).error, /titres/);
+assert.match(parseSchedule("rien", 2026).error, /non reconnu/);
 assert.match(parseSchedule("DATE\tHEURE\tVISITEUR\tLOCAL", 2026).error, /num/);
 
 // Memes equipes ecrites differemment = une seule equipe ; numeros 1/2/3 = equipes distinctes.
@@ -173,5 +177,40 @@ assert.deepEqual(fromPdf.matches[0], { num: 1, date: "2026-04-01", heure: "15:15
 assert.deepEqual(fromPdf.matches[1].away, { ref: "À DÉTERMINER" });
 assert.equal(fromPdf.matches[1].division, "U11 BB");
 assert.deepEqual(gamesFromPages([[it("rien", 1, 1)]]), []); // pas de titres : rien d'invente
+
+/* ---------- Horaire "en texte" par journee (A vs B) ---------- */
+assert.equal(placeholder("3e pool 1"), "3E POOL 1");
+assert.equal(placeholder("1er pool 2"), "1ER POOL 2");
+assert.equal(placeholder("Gagnant QF1"), "GAGNANT QF1");
+assert.equal(placeholder("Gagnant DF 2"), "GAGNANT DF2");
+assert.equal(placeholder("Prédateurs"), null);
+
+const vsText = tsv([
+  ["Horaire tournoi test"],
+  ["Vendredi 23 janvier", "", "", "", "", "Pool 1", "Pool 2"],
+  ["Partie", "", "", "Heure", "Type", "Equipe X de Ville", "Equipe Y de Port"],
+  ["Ambassadeurs", "vs", "Prédateurs", "16h", "POOL 2", "Equipe Z de Mer", "Equipe W de Lac"],
+  ["Express", "vs", "Flyers", "17h30", "POOL 1", "Notes :"],
+  ["Samedi 24 janvier"],
+  ["Partie", "", "", "Heure", "Type"],
+  ["3e pool 1", "vs", "2e pool 2", "17h", "QF1"],
+  ["Gagnant QF1", "vs", "Gagnant QF3", "8h", "DF1"],
+  ["Sans", "vs", "Heure"],
+]);
+const vs = parseSchedule(vsText, 2026);
+assert.equal(vs.error, undefined);
+assert.equal(vs.matches.length, 4);
+assert.deepEqual(vs.matches[0], { num: 1, date: "2026-01-23", heure: "16:00", lieu: "", division: "", round: "POOL 2", away: { nom: "Ambassadeurs" }, home: { nom: "Prédateurs" } });
+assert.equal(vs.matches[1].heure, "17:30");
+assert.equal(vs.matches[2].date, "2026-01-24"); // la date vient de la ligne de titre du jour
+assert.deepEqual(vs.matches[2].away, { ref: "3E POOL 1" });
+assert.deepEqual(vs.matches[3].home, { ref: "GAGNANT QF3" });
+assert.equal(vs.matches[3].round, "DF1");
+assert.deepEqual(vs.skipped.map((x) => x.reason), ["pas un match reconnu"]); // "Sans vs Heure" n'a pas d'heure
+// Un "vs" avant toute ligne de jour : signale, rien n'est invente.
+assert.equal(parseSchedule(tsv([["A", "vs", "B", "8h", "POOL 1"]]), 2026).error?.startsWith("Horaire non reconnu"), true);
+// La ronde passe jusqu'a la base.
+const upd2 = buildUpdate(vs.matches, {}, new Map(), (() => { let c = 0; return () => `k${++c}`; })());
+assert.equal(Object.values(upd2).find((r) => r.num === 1).round, "POOL 2");
 
 console.log("tous les tests passent");
