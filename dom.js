@@ -1,5 +1,5 @@
 // Petit createur d'elements : le texte passe par textContent, jamais par innerHTML.
-const keep = (kids) => kids.flat().filter((x) => x != null && x !== false);
+const keep = (kids) => kids.flat(Infinity).filter((x) => x != null && x !== false);
 
 // Remplace le contenu d'un element en ignorant les valeurs vides (undefined, null, false).
 export const fill = (el, ...kids) => el.replaceChildren(...keep(kids));
