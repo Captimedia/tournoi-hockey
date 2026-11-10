@@ -1,7 +1,7 @@
 // Acces a GitHub depuis le navigateur : liste des images du dossier graphiques/ (lecture publique, sans jeton)
 // et envoi d'un logo (avec le jeton de l'utilisateur, jamais ecrit dans un message ni dans le code).
-import { graphiques } from "./config.js";
-import { contentsPut, githubError } from "./logic.js";
+import { graphiques } from "./config.js?v=6f5832a0";
+import { contentsPut, githubError } from "./logic.js?v=6f5832a0";
 
 const KEY = "tournoi-galerie";
 const TTL = 10 * 60 * 1000; // l'API publique limite a 60 lectures par heure et par adresse internet : on garde la liste 10 minutes

@@ -19,6 +19,7 @@
   button.bad { color: var(--bad); }
   .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid var(--bad); color: var(--bad); }
   .badge.up { border-color: var(--ok); color: var(--ok); }
+  .badge.wait { border-color: var(--bd); color: var(--mut); }
   .banner { background: rgba(245,158,11,.12); border: 1px solid #f59e0b; color: #fbbf24; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
   .meta { color: var(--mut); font-size: 12px; }
   .bar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--bd); }
@@ -149,7 +150,7 @@
 <body>
 <header>
   <h1>Capti Tournoi</h1>
-  <span id="conn" class="badge">Hors ligne</span>
+  <span id="conn" class="badge wait">Chargement…</span>
   <span id="user"></span>
 </header>
 <div id="bar" class="bar"></div>
@@ -158,22 +159,32 @@
 <main id="app"></main>
 <div id="toast"></div>
 
+<script>
+  // Si la page ne se charge pas complètement (anciens fichiers gardés en cache par le navigateur), on le dit clairement.
+  const loadFail = (why) => {
+    const app = document.getElementById("app");
+    if (app && !window.__charge) app.textContent = `La page n'a pas pu se charger complètement (${why}). Recharge avec Cmd + Maj + R.`;
+  };
+  window.addEventListener("error", (e) => loadFail(e.message));
+  window.addEventListener("unhandledrejection", (e) => loadFail(String(e.reason?.message ?? e.reason)));
+  setTimeout(() => loadFail("délai dépassé"), 10000);
+</script>
 <script type="module">
 import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-} from "./firebase.js";
-import { h, fill, fallbackImg } from "./dom.js";
+} from "./firebase.js?v=6f5832a0";
+import { h, fill, fallbackImg } from "./dom.js?v=6f5832a0";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
   mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, safeFileName, rawUrl,
-} from "./logic.js";
-import { readScheduleFile } from "./import-file.js";
-import { loadTree, addToCache, publishImage, testToken } from "./galerie.js";
-import { graphiques } from "./config.js";
-import { TEAMS, SPONSORS } from "./seed.js";
+} from "./logic.js?v=6f5832a0";
+import { readScheduleFile } from "./import-file.js?v=6f5832a0";
+import { loadTree, addToCache, publishImage, testToken } from "./galerie.js?v=6f5832a0";
+import { graphiques } from "./config.js?v=6f5832a0";
+import { TEAMS, SPONSORS } from "./seed.js?v=6f5832a0";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};
@@ -1130,6 +1141,7 @@ onAuthStateChanged(auth, (u) => {
 });
 initPreviews();
 render();
+window.__charge = true;
 </script>
 </body>
 </html>

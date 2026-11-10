@@ -14,6 +14,10 @@ Pages statiques (GitHub Pages) + Firebase Realtime Database (forfait gratuit).
 
 Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://localhost:8080 (les modules JS ne marchent pas en `file://`).
 
+## Publier une modification
+
+`node test.mjs` (tests), puis **`node scripts/cachebust.mjs`** avant chaque commit : il ajoute une empreinte (`?v=…`) à chaque import local. GitHub Pages laisse les navigateurs garder un fichier 10 minutes ; sans cette empreinte, un navigateur pouvait charger une page neuve avec d'anciens fichiers et afficher une page vide. Si une page ne se charge quand même pas, elle affiche un message qui demande un rechargement forcé (Cmd + Maj + R).
+
 ## Tournois et bibliothèques
 
 - Chaque **tournoi** a ses propres équipes, commanditaires, matchs, notes et état de glaces. Le sélecteur en haut choisit le tournoi qu'on modifie ; **★ Définir comme actif** choisit celui que les overlays affichent (les URL d'overlay ne changent donc jamais).

@@ -1,5 +1,5 @@
 // Donnees de depart reprises du Google Sheet (onglet Equipes) ; les images sont dans graphiques/ (copie reduite de l'ancien depot overlay).
-import { graphiques } from "./config.js";
+import { graphiques } from "./config.js?v=6f5832a0";
 
 const LOGOS = `${graphiques.base}logos/`;
 const SPONSORS_URL = `${graphiques.base}commanditaires/`;
