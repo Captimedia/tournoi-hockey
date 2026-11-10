@@ -404,4 +404,13 @@ assert.match(githubError(422), /existe déjà/);
 assert.equal(githubError(500), "Erreur GitHub (500).");
 for (const s of [401, 403, 404, 422, 500]) assert.equal(/github_pat|ghp_|Bearer/.test(githubError(s)), false); // jamais de jeton dans un message
 
+/* ---------- Adresse de secours ---------- */
+import { rawUrl } from "./logic.js";
+const gcfg = { owner: "O", repo: "R", branch: "main", dossier: "graphiques", base: "https://o.github.io/R/graphiques/" };
+assert.equal(rawUrl("https://o.github.io/R/graphiques/logos/Express-2.png", gcfg), "https://raw.githubusercontent.com/O/R/main/graphiques/logos/Express-2.png");
+assert.equal(rawUrl("https://o.github.io/R/graphiques/commanditaires/O'Dwyer%201.png", gcfg), "https://raw.githubusercontent.com/O/R/main/graphiques/commanditaires/O'Dwyer%201.png");
+assert.equal(rawUrl("https://captimedia.github.io/overlay/logos/X.png", gcfg), null); // ancien depot : pas de secours
+assert.equal(rawUrl("data:image/png;base64,AAAA", gcfg), null);
+assert.equal(rawUrl(undefined, gcfg), null);
+
 console.log("tous les tests passent");

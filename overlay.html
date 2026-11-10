@@ -21,8 +21,9 @@
 <div id="box"></div>
 <script type="module">
 import { db, ref, onValue } from "./firebase.js";
-import { h, fill } from "./dom.js";
-import { colorOf, scorebirdUrl, sideName } from "./logic.js";
+import { h, fill, fallbackImg } from "./dom.js";
+import { colorOf, scorebirdUrl, sideName, rawUrl } from "./logic.js";
+import { graphiques } from "./config.js";
 
 // ?glace=1&mode=live | next | url  (url = overlay Scorebird complet du match en cours)
 // ?tournoi=ID fixe un tournoi ; sinon l'overlay suit le tournoi actif choisi dans le dashboard.
@@ -31,6 +32,8 @@ const glace = p.get("glace") ?? "1";
 const mode = ["next", "url"].includes(p.get("mode")) ? p.get("mode") : "live";
 const box = document.getElementById("box");
 const cacheKey = (id) => `tournoi-${id}`;
+// Logo envoye depuis peu : sa page publique met 1 a 2 minutes ; le fichier brut du depot sert de secours.
+const rawOf = (u) => rawUrl(u, graphiques);
 
 const dateFR = (d) => {
   const dt = new Date(`${d}T12:00:00`);
@@ -41,7 +44,7 @@ function team(pub, m, key, withScore) {
   const t = pub.teams?.[m[key]];
   const mode_ = m[`${key}Mode`] ?? (key === "away" ? "Secondary" : "Primary");
   const row = h("div", { class: "team", style: `border-left-color:${colorOf(t, mode_)}` },
-    t?.logo && h("img", { src: t.logo, alt: "" }),
+    t?.logo && fallbackImg(t.logo, rawOf),
     h("span", { class: "n" }, sideName(m, key, pub.teams)),
     withScore && h("span", { class: "s" }, m[`${key}Score`] ?? 0));
   return row;
@@ -74,7 +77,7 @@ function render(pub) {
       [m.division, m.round].filter(Boolean).join(" - ")),
     team(pub, m, "away", live),
     team(pub, m, "home", live),
-    sponsor?.logo && h("div", { class: "sp" }, h("img", { src: sponsor.logo, alt: "" })));
+    sponsor?.logo && h("div", { class: "sp" }, fallbackImg(sponsor.logo, rawOf)));
   box.style.display = "inline-block";
 }
 

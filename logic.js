@@ -529,3 +529,10 @@ export const githubError = (status) =>
     404: "Dépôt introuvable ou jeton sans accès à tournoi-hockey.",
     422: "Un fichier de ce nom existe déjà : réessaie.",
   })[status] ?? `Erreur GitHub (${status}).`;
+
+// Adresse du fichier brut du depot pour une image du dossier graphiques/ : disponible tout de suite apres un envoi,
+// alors que la page publique (GitHub Pages) met 1 a 2 minutes. null pour toute autre adresse.
+export const rawUrl = (url, cfg) =>
+  typeof url === "string" && url.startsWith(cfg.base)
+    ? `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${cfg.dossier}/${url.slice(cfg.base.length)}`
+    : null;

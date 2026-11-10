@@ -32,6 +32,17 @@
   #toast button { margin-left: 8px; }
   .item.compact { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
   .item.compact .nom { flex: 1; min-width: 120px; }
+  .modal { background: var(--card); color: var(--tx); border: 1px solid var(--bd); border-radius: 14px; padding: 16px; width: min(440px, 92vw); }
+  .modal::backdrop { background: rgba(0,0,0,.65); }
+  .modal h3 { margin: 0 0 10px; }
+  .modal input, .modal select { width: 100%; margin-bottom: 8px; }
+  .modal label { display: block; }
+  .flash { animation: flash 2.5s ease; }
+  @keyframes flash { 0%, 60% { background: rgba(59,130,246,.35); border-color: var(--ac); } 100% { background: var(--card); } }
+  .upload-card { display: flex; gap: 10px; align-items: center; border: 1px solid var(--ok); border-radius: 8px; padding: 8px; background: rgba(34,197,94,.08); }
+  .upload-card.err { border-color: var(--bad); background: rgba(239,68,68,.08); }
+  .upload-card img { width: 72px; height: 72px; object-fit: contain; background: #0f172a; border-radius: 6px; }
+  .up-text { flex: 1; }
   .logo-btn { padding: 0; border: none; background: none; line-height: 0; }
   .logo-btn .logo { border: 1px dashed #334155; }
   .logo-btn:hover .logo { border-color: var(--ac); }
@@ -152,12 +163,12 @@ import {
   db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "./firebase.js";
-import { h, fill } from "./dom.js";
+import { h, fill, fallbackImg } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
-  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, safeFileName,
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, safeFileName, rawUrl,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
 import { loadTree, addToCache, publishImage, testToken } from "./galerie.js";
@@ -213,7 +224,9 @@ const refreshView = () => { pub = { ...(cur ?? {}), lib, actif, liste }; };
 
 /* ---------- petits morceaux ---------- */
 const T = (id) => pub.teams?.[id];
-const logoImg = (src) => (src ? h("img", { class: "logo", src, alt: "" }) : h("div", { class: "logo" }));
+// Adresse de secours d'un logo du depot (fichier brut) tant que sa page publique n'est pas en ligne.
+const rawOf = (u) => rawUrl(u, graphiques);
+const logoImg = (src) => (src ? fallbackImg(src, rawOf, { class: "logo" }) : h("div", { class: "logo" }));
 const optionsOf = (obj, sel, label, empty = "—") => [
   h("option", { value: "" }, empty),
   Object.entries(obj ?? {}).map(([id, o]) => h("option", { value: id, selected: id === sel }, label(o))),
@@ -247,7 +260,7 @@ function team(m, key, mp) {
   const setScore = (v) => put(`${mp}${key}Score`, v);
   return h("div", { class: "team" },
     h("div", { class: "team-logo", style: `border-color:${color};box-shadow:0 0 10px ${color}55` },
-      t?.logo ? h("img", { src: t.logo, alt: "" }) : name.charAt(0)),
+      t?.logo ? fallbackImg(t.logo, rawOf) : name.charAt(0)),
     h("div", { class: "team-name", title: t?.complet ?? "" }, name),
     h("div", { class: "score" },
       btn("−", () => setScore(Math.max(0, (score ?? 0) - 1))),
@@ -287,7 +300,7 @@ function matchCard(id) {
     h("div", { class: "match-time" }, `${dateFR(m.date)} ${m.heure ?? ""}`),
     colorControl(m, mp),
     h("div", { class: "sponsor-box" },
-      sponsor?.logo && h("img", { src: sponsor.logo, alt: sponsor.nom ?? "" }),
+      sponsor?.logo && fallbackImg(sponsor.logo, rawOf, { alt: sponsor.nom ?? "" }),
       h("select", { onchange: (e) => put(`${mp}sponsor`, e.target.value) }, optionsOf(pub.sponsors, m.sponsor, (s) => s.nom, "Commanditaire…"))));
 }
 
@@ -448,24 +461,60 @@ async function loadGallery(force = false) {
   render();
 }
 
+// Etat de l'envoi en cours, affiche dans la galerie : l'image envoyee s'y voit tout de suite (pour valider), puis on
+// surveille la publication de sa page publique (GitHub Pages, 1 a 2 minutes) ; entre-temps le fichier brut sert de secours.
+const up = { state: null, name: "", url: "", preview: "", msg: "" };
+const UP_TEXT = {
+  envoi: "⏳ Envoi à GitHub…",
+  envoye: "✔ Envoyé à GitHub et enregistré comme logo. ⏳ Publication sur le site en cours (1 à 2 minutes) : l'image s'affiche déjà.",
+  enligne: "✔ En ligne : l'adresse publique fonctionne (Scorebird peut l'utiliser).",
+  lent: "La publication prend plus de temps que prévu. L'image s'affiche quand même ; réessaie « ↻ Actualiser » dans quelques minutes avant d'utiliser Scorebird.",
+};
+const probe = (url) => new Promise((res) => {
+  const i = new Image();
+  i.onload = () => res(true);
+  i.onerror = () => res(false);
+  i.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+});
+async function surveillerPublication(url) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 5 * 60 * 1000 && up.url === url) {
+    if (await probe(url)) { up.state = "enligne"; render(); return; }
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+  if (up.url === url) { up.state = "lent"; render(); }
+}
+const uploadCard = () => up.state && h("div", { class: `upload-card${up.state === "erreur" ? " err" : ""}` },
+  up.preview && h("img", { src: up.preview, alt: "" }),
+  h("div", { class: "up-text" }, h("b", {}, up.name), h("div", { class: "meta" }, up.state === "erreur" ? up.msg : UP_TEXT[up.state])),
+  btn("OK", () => { up.state = null; render(); }));
+
 // Envoi d'un logo vers le dossier graphiques/ de GitHub : image reduite a 400 px, NOUVEAU fichier (jamais de remplacement).
 // Le jeton n'est lu qu'ici, au moment de l'envoi.
 async function ajouterLogo(file, folder, nom, setLogo) {
   let token = null;
   try { token = (await get(ref(db, "secret/github"))).val()?.token ?? null; } catch { token = null; }
   if (!token) return toast("Pour ajouter un logo, enregistre d'abord ton jeton GitHub (onglet Sauvegarde).");
-  toast("Envoi du logo…");
+  Object.assign(up, { state: "envoi", name: file.name, url: "", preview: "", msg: "" });
+  render();
   try {
     const tree = gal.tree ?? await loadTree();
     const taken = tree.filter((x) => x.path.startsWith(`${graphiques.dossier}/${folder}/`)).map((x) => x.path.split("/").pop());
     const name = safeFileName(nom || file.name.replace(/\.[^.]+$/, ""), "png", taken);
     const dataUrl = await reduceImage(file, 400);
+    Object.assign(up, { name, preview: dataUrl });
+    render();
     const url = await publishImage(token, folder, name, dataUrl.split(",")[1]);
     addToCache(`${graphiques.dossier}/${folder}/${name}`);
     gal.tree = await loadTree();
     await setLogo(url);
-    toast(`Logo publié (${name}). Il sera visible dans environ une minute.`);
-  } catch (e) { toast(e.message); }
+    Object.assign(up, { state: "envoye", url });
+    render();
+    surveillerPublication(url);
+  } catch (e) {
+    Object.assign(up, { state: "erreur", msg: e.message });
+    render();
+  }
 }
 
 // Galerie des images du dossier graphiques/ (meme nom d'abord), avec recherche, actualisation et ajout.
@@ -488,14 +537,78 @@ function galleryPanel(folder, nom, setLogo) {
         "＋ Ajouter un logo…",
         h("input", { type: "file", accept: "image/*", style: "display:none",
           onchange: async (e) => { const f = e.target.files[0]; if (f) await ajouterLogo(f, folder, nom, setLogo); } }))),
+    uploadCard(),
     gal.loading ? h("div", { class: "meta" }, "Chargement…")
       : gal.error ? h("div", { class: "banner" }, gal.error)
         : shown.length
           ? h("div", { class: "thumbs" }, shown.map((it) => h("button", { class: "thumb", title: it.name, onclick: () => { setLogo(it.url); galFor = null; render(); } },
-            h("img", { src: it.url, loading: "lazy", alt: "" }),
+            fallbackImg(it.url, rawOf, { loading: "lazy" }),
             h("span", {}, it.name.replace(/\.[^.]+$/, "")),
             it.match && h("em", {}, "même nom"))))
           : h("div", { class: "meta" }, "Aucune image."));
+}
+
+// Mise en evidence d'une ligne (nouvelle ou renommee, donc deplacee dans la liste triee) : defilement puis surbrillance.
+const flash = { id: null, done: false };
+const flashRow = (id) => { flash.id = id; flash.done = false; };
+function showFlash() {
+  const el = flash.id && document.querySelector(".flash");
+  if (!el || flash.done) return;
+  flash.done = true;
+  el.scrollIntoView({ block: "center" });
+  const id = flash.id;
+  setTimeout(() => { if (flash.id === id) { flash.id = null; el.classList.remove("flash"); } }, 2500);
+}
+
+// Fenetre "Nouvelle equipe / Nouveau commanditaire" : rien n'est cree avant de valider, donc la ligne n'apparait pas
+// (puis ne saute pas dans la liste triee) avant d'avoir son nom. La bibliotheque propose le logo, les couleurs et le nom complet.
+function askNew({ title, fields, root, libItems, isLib }) {
+  const dlg = h("dialog", { class: "modal" });
+  // Fermer = retirer la fenetre puis redessiner la page (sinon la liste attendrait la fin de la saisie, tant que le champ garde le focus).
+  const fermer = () => { if (dlg.isConnected) { dlg.close(); dlg.remove(); render(); } };
+  const nom = h("input", { type: "text", placeholder: "Nom court (affiché dans l'horaire)" });
+  const complet = fields.includes("complet") ? h("input", { type: "text", placeholder: "Nom complet (facultatif)" }) : null;
+  const sel = !isLib && Object.keys(libItems).length ? h("select", {}) : null;
+  const label = (l) => (l.complet ? `${l.nom} (${l.complet})` : l.nom);
+  let touched = false;
+  const fillSel = () => {
+    if (!sel) return;
+    const cands = libCandidates({ nom: nom.value, complet: complet?.value }, libItems);
+    const others = Object.keys(libItems).filter((g) => !cands.includes(g)).sort((a, b) => normName(libItems[a].nom).localeCompare(normName(libItems[b].nom)));
+    const opt = (g) => h("option", { value: g }, label(libItems[g]));
+    const keepVal = sel.value;
+    sel.replaceChildren(h("option", { value: "" }, "Aucune association"),
+      cands.length > 0 && h("optgroup", { label: "★ Suggestion" }, cands.map(opt)),
+      others.length > 0 && h("optgroup", { label: "Bibliothèque" }, others.map(opt)));
+    sel.value = touched ? keepVal : (cands.length === 1 ? cands[0] : ""); // une seule suggestion : pre-choisie, visible avant de valider
+  };
+  const creer = async () => {
+    const n = nom.value.trim();
+    if (!n) { nom.focus(); return; }
+    const gid = sel?.value;
+    const data = {
+      nom: n,
+      ...(fields.includes("colors") && { primary: "#666666", secondary: "#dadada" }),
+      ...(gid && { ...fromLib(libItems[gid]), lib: gid }),
+      ...(complet?.value.trim() && { complet: complet.value.trim() }),
+    };
+    const key = push(ref(db, root)).key;
+    if (await w(() => update(ref(db), { [`${root}/${key}`]: data }))) { flashRow(key); fermer(); }
+  };
+  nom.addEventListener("input", fillSel);
+  complet?.addEventListener("input", fillSel);
+  sel?.addEventListener("change", () => { touched = true; });
+  dlg.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); creer(); }
+    if (e.key === "Escape") { e.preventDefault(); fermer(); }
+  });
+  dlg.addEventListener("close", fermer); // Echap
+  dlg.append(h("h3", {}, title), nom, complet, sel && h("label", { class: "meta" }, "Associer à la bibliothèque (logo, couleurs, nom complet)", sel),
+    h("div", { class: "row" }, btn("Annuler", fermer), btn("Ajouter", creer, "ok")));
+  fillSel();
+  document.body.append(dlg);
+  dlg.showModal();
+  nom.focus();
 }
 
 // Liste modifiable, une ligne courte par element : logo (clic = galerie), nom, couleurs, menu d'association, ⋯ et ✕.
@@ -511,7 +624,7 @@ function collection({ key, title, fields, scope }) {
   for (const id of [...sel]) if (!(id in items)) sel.delete(id);
   const entries = Object.entries(items).sort((a, b) => normName(a[1].nom).localeCompare(normName(b[1].nom)));
   const seed = key === "teams" ? TEAMS : SPONSORS;
-  const add = () => w(() => push(ref(db, root), { nom: "Nouveau" }));
+  const add = () => askNew({ title: `Nouveau : ${title.toLowerCase()}`, fields, root, libItems, isLib });
   const loadSeed = () => w(() => update(ref(db, root), Object.fromEntries(seed.map((s) => [push(ref(db, root)).key, s]))));
 
   const supprimer = async (ids) => {
@@ -578,11 +691,11 @@ function collection({ key, title, fields, scope }) {
     const p = `${root}/${id}/`;
     const rowKey = `${root}/${id}`;
     const setLogo = (url) => put(`${p}logo`, url);
-    return h("div", { class: "item compact" },
+    return h("div", { class: `item compact${flash.id === id ? " flash" : ""}` },
       h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
       h("button", { class: "logo-btn", title: "Choisir un logo dans la galerie",
         onclick: () => { galFor = galFor === rowKey ? null : rowKey; gal.query = ""; render(); if (galFor && !gal.tree) loadGallery(); } }, logoImg(o.logo)),
-      h("input", { type: "text", class: "nom", placeholder: "Nom", title: "Nom court : celui de l'horaire et de l'overlay", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
+      h("input", { type: "text", class: "nom", placeholder: "Nom", title: "Nom court : celui de l'horaire et de l'overlay", value: o.nom ?? "", onchange: async (e) => { flashRow(id); await put(`${p}nom`, e.target.value.trim()); render(); } }),
       fields.includes("colors") && [
         h("input", { type: "color", title: "Couleur primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
         h("input", { type: "color", title: "Couleur secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
@@ -988,6 +1101,7 @@ function render() {
     tid && actif && tid !== actif && h("div", { class: "banner" }, `Ce tournoi n'est pas le tournoi actif : les overlays affichent « ${liste[actif]?.nom ?? "?"} ».`),
     views[tab]());
   updatePreviews();
+  showFlash();
 }
 
 // Ne pas redessiner pendant qu'on tape dans un champ : on le fait en quittant le champ.
