@@ -16,7 +16,12 @@ Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://local
 
 ## Importer un horaire
 
-Onglet **Importer** : copier les cellules dans Excel ou Google Sheets (avec la ligne de titres), les coller, **Analyser**, vérifier l'aperçu, **Importer**.
+Onglet **Importer** : choisir un **fichier PDF, Excel (.xlsx) ou CSV**, ou copier les cellules dans Excel / Google Sheets (avec la ligne de titres) et les coller, puis **Analyser**, vérifier l'aperçu, **Importer**.
+
+- Les fichiers sont lus dans le navigateur, rien n'est envoyé. Les bibliothèques de lecture (pdf.js 3.11.174, SheetJS 0.18.5) sont chargées à la demande depuis cdnjs, avec vérification d'intégrité (SRI) ; pour changer de version, recalculer le hash dans `import-file.js`.
+- PDF : il faut du texte sélectionnable (pas un scan) et un tableau avec les colonnes Date, Time/Heure, Location/Lieu, Category/Catégorie, Away/Visiteur, Score/Pointage, Home/Local. Sinon, utiliser le copier-coller.
+- Excel : la première feuille qui contient un horaire lisible est utilisée.
+- `.gitignore` empêche de publier par erreur des PDF, Excel ou CSV (fichiers clients).
 
 - Colonnes reconnues par leur titre : NO, DATE, HEURE, LIEU, DIVISION, VISITEUR, LOCAL (l'ordre n'a pas d'importance, les autres colonnes sont ignorées).
 - Dates acceptées : numéro Excel, `2026-03-19`, `19/03/2026`, `jeudi 19 mars` (année = champ Année).

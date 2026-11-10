@@ -1,0 +1,6 @@
+# Fichiers clients : ne jamais publier
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.tsv

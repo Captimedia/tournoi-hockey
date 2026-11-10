@@ -71,8 +71,9 @@ import {
 import { h, fill } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
-  parseSchedule, uniqueTeams, teamIndex, buildUpdate,
+  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces,
 } from "./logic.js";
+import { readScheduleFile } from "./import-file.js";
 import { TEAMS, SPONSORS } from "./seed.js";
 
 let pub = {};
@@ -274,11 +275,24 @@ function analyser() {
   const have = new Set(Object.values(pub.matches ?? {}).map((m) => m.num));
   imp.result = { ...r, todo: r.matches.filter((m) => !have.has(m.num)), dupes: r.matches.filter((m) => have.has(m.num)) };
   const lieux = [...new Set(imp.result.todo.map((m) => m.lieu))];
-  imp.glaces = Object.fromEntries(lieux.map((l, i) => [l, Math.min(i + 1, 2)]));
+  imp.glaces = defaultGlaces(lieux);
   const idx = teamIndex(pub.teams);
   imp.teams = uniqueTeams(imp.result.todo).map((t) => ({ ...t, id: idx.get(t.key) ?? "" }));
   imp.teamMap = Object.fromEntries(imp.teams.map((t) => [t.key, t.id]));
   render();
+}
+
+async function choisirFichier(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  toast("Lecture du fichier…");
+  try {
+    imp.text = await readScheduleFile(f);
+    analyser();
+  } catch (err) {
+    imp.result = { error: err.message, matches: [], skipped: [], todo: [], dupes: [] };
+    render();
+  }
 }
 
 async function lancerImport() {
@@ -331,6 +345,10 @@ function importer() {
   ];
 
   return h("div", { class: "list" },
+    h("div", { class: "item" },
+      h("b", {}, "Fichier"),
+      h("input", { type: "file", accept: ".pdf,.xlsx,.xls,.csv,.txt,.tsv", onchange: choisirFichier }),
+      h("span", { class: "meta" }, "PDF (avec texte sélectionnable), Excel ou CSV. Lu dans ton navigateur, rien n'est envoyé. Ou colle les cellules ci-dessous.")),
     h("div", { class: "item" },
       h("textarea", {
         rows: 8, style: "flex:1;min-width:280px",

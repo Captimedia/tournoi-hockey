@@ -115,4 +115,63 @@ assert.equal(recs[2].away, undefined);
 assert.equal(sideName(recs[2], "away", {}), "PERDANT #1");
 assert.equal(sideName({ away: "t1" }, "away", existing), "EQUIPE A 1 VILLE");
 
+/* ---------- Formats du PDF (dates anglaises, PM/AM, TBD) ---------- */
+import { defaultGlaces } from "./logic.js";
+import { gamesFromPages, gamesToTsv } from "./pdftable.js";
+
+assert.equal(parseDate("Apr 1, 2026"), "2026-04-01");
+assert.equal(parseDate("December 25, 2026"), "2026-12-25");
+assert.equal(parseTime("3:15 PM"), "15:15");
+assert.equal(parseTime("8:00 AM"), "08:00");
+assert.equal(parseTime("12:00 AM"), "00:00");
+assert.equal(parseTime("12:30 PM"), "12:30");
+assert.equal(parseTime("13:00 PM"), null);
+assert.equal(placeholder("TBD"), "À DÉTERMINER");
+
+// Une ligne repetee a l'identique est ignoree en silence.
+const dup = tsv([["NO", "DATE", "HEURE", "VISITEUR", "LOCAL"], ["1", "2026-04-01", "8h00", "A", "B"], ["1", "2026-04-01", "8h00", "A", "B"]]);
+const pd = parseSchedule(dup, 2026);
+assert.equal(pd.matches.length, 1);
+assert.equal(pd.skipped.length, 0);
+
+assert.deepEqual(defaultGlaces(["Aréna (Glace 2)", "Aréna (Glace 1)"]), { "Aréna (Glace 2)": 2, "Aréna (Glace 1)": 1 });
+assert.deepEqual(defaultGlaces(["Nord", "Sud"]), { Nord: 1, Sud: 2 });
+
+// PDF : tableau avec colonnes a position fixe ; un match = 3 lignes (texte au-dessus, sur et sous le numero).
+const it = (s, x, y) => ({ s, x, y });
+const header = [
+  it("TOURNOI TEST", 384, 1123), it("Game", 5, 1076), it("#", 5, 1062),
+  it("Date", 49, 1069), it("Time", 111, 1069), it("Location", 162, 1069), it("Category", 407, 1069),
+  it("Away", 459, 1069), it("Score", 635, 1069), it("Home", 671, 1069),
+];
+const page1 = [
+  ...header,
+  // match 1 : equipe locale sur 2 lignes (nom au-dessus, suite en dessous)
+  it("Aréna", 162, 1038), it("Nord", 195, 1038), it("(", 230, 1038), it("Glace", 233, 1038), it("1)", 260, 1038),
+  it("U", 407, 1038), it("13", 414, 1038), it("AA", 426, 1038),
+  it("L", 671, 1038), it("'", 676, 1038), it("ÉQUIPE", 678, 1038), it("B", 732, 1038), it("-", 772, 1038),
+  it("1", 5, 1031), it("Apr", 49, 1031), it("1, 2026", 67, 1031), it("3:15", 111, 1031), it("PM", 131, 1031),
+  it("ÉQUIPE", 459, 1031), it("A", 500, 1031), it("-", 645, 1031),
+  it("Ville", 162, 1024), it(",", 190, 1024), it("QC", 195, 1024), it("Mixed", 407, 1026), it("CHAMPIONNAT", 671, 1026),
+];
+const page2 = [
+  ...header,
+  // match 2 : equipes a determiner
+  it("Aréna", 162, 1000), it("Nord", 195, 1000), it("(", 230, 1000), it("Glace", 233, 1000), it("1)", 260, 1000),
+  it("U", 407, 1000), it("11", 414, 1000), it("BB", 424, 1000),
+  it("2", 5, 993), it("Apr", 49, 993), it("2, 2026", 67, 993), it("8:00", 111, 993), it("AM", 134, 993),
+  it("TBD", 459, 993), it("-", 645, 993), it("TBD", 671, 993),
+  it("Mixed", 407, 988),
+];
+const games = gamesFromPages([page1, page2]);
+assert.equal(games.length, 2);
+assert.deepEqual(games[0], { num: 1, loc: "Aréna Nord ( Glace 1) Ville, QC", cat: "U 13 AA Mixed", date: "Apr 1, 2026", time: "3:15 PM", away: "ÉQUIPE A", score: "-", home: "L'ÉQUIPE B - CHAMPIONNAT" });
+const fromPdf = parseSchedule(gamesToTsv(games), 2026);
+assert.equal(fromPdf.error, undefined);
+assert.equal(fromPdf.matches.length, 2);
+assert.deepEqual(fromPdf.matches[0], { num: 1, date: "2026-04-01", heure: "15:15", lieu: "Aréna Nord ( Glace 1) Ville, QC", division: "U13 AA", away: { nom: "ÉQUIPE A" }, home: { nom: "L'ÉQUIPE B - CHAMPIONNAT" } });
+assert.deepEqual(fromPdf.matches[1].away, { ref: "À DÉTERMINER" });
+assert.equal(fromPdf.matches[1].division, "U11 BB");
+assert.deepEqual(gamesFromPages([[it("rien", 1, 1)]]), []); // pas de titres : rien d'invente
+
 console.log("tous les tests passent");

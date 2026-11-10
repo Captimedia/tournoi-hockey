@@ -61,10 +61,15 @@ const strip = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 // Cle de comparaison des noms : ignore majuscules, accents, apostrophes typographiques et espaces multiples.
 export const normName = (s) => strip(s).replace(/[’‘`´]/g, "'").replace(/\s+/g, " ").trim().toUpperCase();
 
-const MONTHS = {
-  janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6,
-  juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12,
-};
+// Mois en francais et en anglais, complets ou abreges.
+const MONTHS = Object.fromEntries(
+  [
+    [1, "janvier january jan janv"], [2, "fevrier february feb fev fevr"], [3, "mars march mar"],
+    [4, "avril april apr avr"], [5, "mai may"], [6, "juin june jun"], [7, "juillet july jul juil"],
+    [8, "aout august aug"], [9, "septembre september sep sept"], [10, "octobre october oct"],
+    [11, "novembre november nov"], [12, "decembre december dec"],
+  ].flatMap(([n, names]) => names.split(" ").map((w) => [w, n])),
+);
 
 const isoDate = (y, m, d) => {
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -72,7 +77,8 @@ const isoDate = (y, m, d) => {
   return ok ? `${y}-${pad(m)}-${pad(d)}` : null;
 };
 
-// Accepte : numero de serie Excel (46100), 2026-03-19, 19/03/2026, "jeudi 19 mars" (annee = defaultYear).
+// Accepte : numero de serie Excel (46100), 2026-03-19, 19/03/2026, "jeudi 19 mars" (annee = defaultYear),
+// "Apr 1, 2026".
 export const parseDate = (raw, defaultYear) => {
   const s = strip(raw).toLowerCase().trim();
   let m;
@@ -82,19 +88,24 @@ export const parseDate = (raw, defaultYear) => {
   }
   if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return isoDate(+m[1], +m[2], +m[3]);
   if ((m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/))) return isoDate(+m[3], +m[2], +m[1]);
+  if ((m = s.match(/^([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/)) && MONTHS[m[1]]) return isoDate(+m[3], MONTHS[m[1]], +m[2]);
   if ((m = s.match(/^(?:[a-z]+\s+)?(\d{1,2})(?:er)?\s+([a-z]+)(?:\s+(\d{4}))?$/)) && MONTHS[m[2]]) {
     return isoDate(m[3] ? +m[3] : defaultYear, MONTHS[m[2]], +m[1]);
   }
   return null;
 };
 
-// Accepte : 8h00, 15h15, 8h, 8:00, ou une fraction de journee Excel (0.5 = 12:00).
+// Accepte : 8h00, 15h15, 8h, 8:00, 3:15 PM, ou une fraction de journee Excel (0.5 = 12:00).
 export const parseTime = (raw) => {
   const s = String(raw ?? "").toLowerCase().replace(/\s/g, "");
   let m;
-  if ((m = s.match(/^(\d{1,2})[h:](\d{2})?(?::\d{2})?$/))) {
-    const h = +m[1];
+  if ((m = s.match(/^(\d{1,2})[h:](\d{2})?(?::\d{2})?(am|pm)?$/))) {
+    let h = +m[1];
     const mi = +(m[2] ?? 0);
+    if (m[3]) {
+      if (h < 1 || h > 12) return null;
+      h = (h % 12) + (m[3] === "pm" ? 12 : 0);
+    }
     return h < 24 && mi < 60 ? `${pad(h)}:${pad(mi)}` : null;
   }
   if (/^0?\.\d+$/.test(s)) {
@@ -104,10 +115,11 @@ export const parseTime = (raw) => {
   return null;
 };
 
-// "GAGNANT #22", "PERDANT 53", "3E POSITION" : le match n'a pas encore ses equipes.
+// "GAGNANT #22", "PERDANT 53", "3E POSITION", "TBD" : le match n'a pas encore ses equipes.
 export const placeholder = (raw) => {
   const s = normName(raw);
   let m;
+  if (s === "TBD" || s === "A DETERMINER") return "À DÉTERMINER";
   if ((m = s.match(/^(GAGNANT|PERDANT) ?#? ?(\d+)$/))) return `${m[1]} #${m[2]}`;
   if (/^\d+(ER|ERE|E|EME) POSITION$/.test(s)) return String(raw).trim().replace(/\s+/g, " ").toUpperCase();
   return null;
@@ -146,7 +158,7 @@ export const parseSchedule = (text, defaultYear) => {
   const cell = (r, f) => (idx[f] === -1 ? "" : (r[idx[f]] ?? "").trim().replace(/\s+/g, " "));
   const matches = [];
   const skipped = [];
-  const seen = new Set();
+  const seen = new Map();
   for (let i = hi + 1; i < rows.length; i++) {
     const r = rows[i];
     const filled = r.filter((c) => c.trim()).length;
@@ -157,10 +169,14 @@ export const parseSchedule = (text, defaultYear) => {
     const away = cell(r, "away");
     const home = cell(r, "home");
     if (/^\d+$/.test(num) && date && heure && away && home) {
-      if (seen.has(num)) skipped.push({ line: i + 1, raw: r.filter((c) => c.trim()).join(" | "), reason: "numéro en double" });
-      else {
-        seen.add(num);
-        matches.push({ num: Number(num), date, heure, lieu: cell(r, "lieu"), division: cell(r, "division"), away: side(away), home: side(home) });
+      const match = { num: Number(num), date, heure, lieu: cell(r, "lieu"), division: cell(r, "division"), away: side(away), home: side(home) };
+      const key = JSON.stringify(match);
+      if (!seen.has(num)) {
+        seen.set(num, key);
+        matches.push(match);
+      } else if (seen.get(num) !== key) {
+        // Une ligne repetee a l'identique est ignoree en silence ; un meme numero avec un contenu different est signale.
+        skipped.push({ line: i + 1, raw: r.filter((c) => c.trim()).join(" | "), reason: "numéro en double" });
       }
     } else if (/^\d+$/.test(num) || date) {
       skipped.push({ line: i + 1, raw: r.filter((c) => c.trim()).join(" | "), reason: "pas un match reconnu" });
@@ -168,6 +184,15 @@ export const parseSchedule = (text, defaultYear) => {
   }
   return { matches, skipped };
 };
+
+// Glace proposee pour chaque lieu : "Glace 2" dans le nom si present, sinon l'ordre d'apparition.
+export const defaultGlaces = (lieux) =>
+  Object.fromEntries(
+    lieux.map((l, i) => {
+      const n = Number(l.match(/glace\s*(\d)/i)?.[1]);
+      return [l, n === 1 || n === 2 ? n : Math.min(i + 1, 2)];
+    }),
+  );
 
 // Equipes distinctes de l'horaire, telles qu'ecrites (premiere graphie rencontree).
 export const uniqueTeams = (matches) => {
