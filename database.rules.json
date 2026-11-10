@@ -2,11 +2,11 @@
   "rules": {
     "public": {
       ".read": true,
-      ".write": "auth.uid === 'REMPLACER_PAR_TON_UID'"
+      ".write": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'"
     },
     "prive": {
-      ".read": "auth.uid === 'REMPLACER_PAR_TON_UID'",
-      ".write": "auth.uid === 'REMPLACER_PAR_TON_UID'"
+      ".read": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'",
+      ".write": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'"
     }
   }
 }
