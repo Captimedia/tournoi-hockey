@@ -269,4 +269,39 @@ assert.equal(alias["teams/t9/complet"], "L'ESCOUADE DES ILES - CHAMPIONNAT");
 const same = buildUpdate(mt, {}, new Map([["EXPRESS", "t1"]]), mk, { teams: { t1: { nom: "Express" } } });
 assert.equal(same["teams/t1/complet"], undefined);
 
+/* ---------- Tournois et bibliotheques ---------- */
+import { fromLib, toLib, libCandidates, prefixKeys, newTournament, hasLegacy, hasLegacyMatches, legacyMove } from "./logic.js";
+
+const lb = { g1: { nom: "PRÉDATEURS", complet: "Prédateurs de Forillon", logo: "L1", primary: "#111111", secondary: "#eeeeee" },
+  g2: { nom: "PRÉDATEURS (local)", logo: "L2" }, g3: { nom: "EXPRESS", complet: "Express de Mont-Joli" } };
+// Association : logo, couleurs et nom complet sont copies ; le nom court du tournoi n'est pas touche.
+assert.deepEqual(fromLib(lb.g1), { logo: "L1", primary: "#111111", secondary: "#eeeeee", complet: "Prédateurs de Forillon" });
+assert.deepEqual(fromLib(lb.g2), { logo: "L2" }); // les champs absents ne sont pas copies (rien n'est efface)
+assert.deepEqual(fromLib(undefined), {});
+assert.deepEqual(toLib({ nom: "X", logo: "L", complet: "", lib: "g1", extra: 1 }), { nom: "X", logo: "L" }); // ni lien ni champs inconnus
+// Suggestions : meme nom (accents et majuscules ignores), court ou complet.
+assert.deepEqual(libCandidates({ nom: "Prédateurs" }, lb), ["g1"]);
+assert.deepEqual(libCandidates({ nom: "x", complet: "express de mont-joli" }, lb), ["g3"]);
+assert.deepEqual(libCandidates({ nom: "Prédateurs de Forillon" }, lb), ["g1"]); // via le nom complet
+assert.deepEqual(libCandidates({ nom: "Inconnu" }, lb), []);
+assert.deepEqual(libCandidates({ nom: "A" }, undefined), []);
+// Plusieurs versions du meme nom : toutes proposees, l'utilisateur choisit.
+assert.deepEqual(libCandidates({ nom: "Prédateurs" }, { a: { nom: "PREDATEURS" }, b: { nom: "Prédateurs" } }), ["a", "b"]);
+
+assert.deepEqual(prefixKeys({ "teams/a": { nom: "A" }, "matches/m": 1 }, "public/tournois/T"), { "public/tournois/T/teams/a": { nom: "A" }, "public/tournois/T/matches/m": 1 });
+assert.deepEqual(newTournament("T", "Coupe", 5), { "public/tournois/T/nom": "Coupe", "public/tournois/T/cree": 5, "public/liste/T": { nom: "Coupe", cree: 5 } });
+
+// Ancienne structure : equipes et commanditaires vers les bibliotheques, anciens noeuds effaces.
+const old = { teams: { a: { nom: "A" }, b: { nom: "B" } }, sponsors: { s: { nom: "S" } }, glaces: { 1: { live: "x" } } };
+assert.equal(hasLegacy(old), true);
+assert.equal(hasLegacy({ lib: {}, tournois: {} }), false);
+assert.equal(hasLegacyMatches(old), false);
+assert.equal(hasLegacyMatches({ matches: { m: {} } }), true);
+assert.deepEqual(legacyMove(old, { teams: { a: { nom: "DEJA" } } }), {
+  "public/lib/teams/b": { nom: "B" }, // "a" existe deja dans la bibliotheque : pas ecrase
+  "public/lib/sponsors/s": { nom: "S" },
+  "public/teams": null, "public/sponsors": null, "public/glaces": null,
+});
+assert.deepEqual(legacyMove({}, {}), {});
+
 console.log("tous les tests passent");

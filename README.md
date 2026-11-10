@@ -14,6 +14,16 @@ Pages statiques (GitHub Pages) + Firebase Realtime Database (forfait gratuit).
 
 Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://localhost:8080 (les modules JS ne marchent pas en `file://`).
 
+## Tournois et bibliothèques
+
+- Chaque **tournoi** a ses propres équipes, commanditaires, matchs, notes et état de glaces. Le sélecteur en haut choisit le tournoi qu'on modifie ; **★ Définir comme actif** choisit celui que les overlays affichent (les URL d'overlay ne changent donc jamais).
+- L'**import crée les équipes dans le tournoi** (« Nouveau tournoi » ou le tournoi sélectionné) : rien n'est associé automatiquement à une équipe d'un autre tournoi, donc les Prédateurs régional et local restent séparés.
+- Deux **bibliothèques** communes (onglet Bibliothèque) : équipes et commanditaires. Dans les onglets Équipes et Commanditaires d'un tournoi, **Associer à la bibliothèque** copie logo, couleurs et nom complet (le nom court du tournoi ne change pas ; copie : modifier la bibliothèque plus tard ne change pas les anciens tournois, **↻ Resynchroniser** reprend la version à jour). Des **suggestions** (même nom court ou complet) sont proposées, jamais appliquées sans confirmation. **→ Bibliothèque** ajoute ou met à jour une équipe dans la bibliothèque.
+- **Supprimer un tournoi** (onglet Sauvegarde) efface ses équipes, commanditaires, matchs et notes, pas les bibliothèques.
+- Structure : `public/tournois/{id}` (fiche), `public/liste/{id}` (index pour le sélecteur), `public/actif`, `public/lib/teams`, `public/lib/sponsors`, `prive/{id}/{matchId}` (caméraman, note). Le dashboard ne lit que les bibliothèques, l'index et le tournoi sélectionné.
+- Anciennes données (avant les tournois) : un bandeau propose de ranger les équipes et commanditaires dans les bibliothèques.
+- La sauvegarde télécharge tout (tournois, bibliothèques, notes privées).
+
 ## Une page par glace
 
 Les onglets **Glace 1** et **Glace 2** reprennent l'ancienne page `glace1.html` : match en cours et prochain match côte à côte (logos, pointages avec − / + ou saisie, couleurs Pri / Sec, commanditaire), Valider / Précédent / Suivant, puis l'horaire de la glace avec filtres et boutons « En cours » / « Prochain » par ligne.
@@ -53,7 +63,7 @@ Onglet **Importer** : choisir un **fichier PDF, Excel (.xlsx) ou CSV**, ou copie
 `overlay.html?glace=1&mode=next` : prochain match.
 `overlay.html?glace=1&mode=url` : overlay Scorebird complet du match en cours (numéro Scorebird à entrer dans le dashboard).
 
-Le dashboard a des boutons « Copier URL » pour chacun.
+Le dashboard a des boutons « Copier URL » pour chacun. L'overlay suit le tournoi actif ; `&tournoi=ID` fixe un tournoi précis.
 
 ## Données
 

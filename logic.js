@@ -326,3 +326,45 @@ export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = 
   }
   return updates;
 };
+
+/* ---------- Tournois et bibliotheques ---------- */
+
+// Element de la bibliotheque -> champs copies dans un tournoi (le nom court du tournoi reste inchange).
+export const fromLib = (l) => Object.fromEntries(["logo", "primary", "secondary", "complet"].filter((k) => l?.[k]).map((k) => [k, l[k]]));
+
+// Element d'un tournoi -> entree de bibliotheque.
+export const toLib = (t) => Object.fromEntries(["nom", "complet", "logo", "primary", "secondary"].filter((k) => t?.[k]).map((k) => [k, t[k]]));
+
+// Ids de la bibliotheque dont le nom (court ou complet) est celui de l'element du tournoi.
+export const libCandidates = (item, lib) => {
+  const keys = [item?.nom, item?.complet].filter(Boolean).map(normName);
+  return Object.entries(lib ?? {})
+    .filter(([, l]) => [l.nom, l.complet].filter(Boolean).map(normName).some((k) => keys.includes(k)))
+    .map(([id]) => id);
+};
+
+// Prefixe chaque chemin d'une mise a jour multi-chemins (ex. "teams/ID" -> "public/tournois/T/teams/ID").
+export const prefixKeys = (updates, base) => Object.fromEntries(Object.entries(updates).map(([k, v]) => [`${base}/${k}`, v]));
+
+// Creation d'un tournoi : sa fiche et son entree dans l'index (liste) lu par le selecteur.
+export const newTournament = (id, nom, now) => ({
+  [`public/tournois/${id}/nom`]: nom,
+  [`public/tournois/${id}/cree`]: now,
+  [`public/liste/${id}`]: { nom, cree: now },
+});
+
+// Ancienne structure (public/teams, sponsors, matches, glaces, avant les tournois).
+const LEGACY = ["teams", "sponsors", "matches", "glaces"];
+export const hasLegacy = (raw) => LEGACY.some((k) => raw?.[k]);
+
+// Range les anciennes equipes et commanditaires dans les bibliotheques (sans ecraser un id deja present)
+// puis efface les quatre anciens noeuds. Les anciens matchs ne sont pas deplacables : voir hasLegacyMatches.
+export const hasLegacyMatches = (raw) => Object.keys(raw?.matches ?? {}).length > 0;
+export const legacyMove = (raw, lib = {}) => {
+  const up = {};
+  for (const key of ["teams", "sponsors"]) {
+    for (const [id, v] of Object.entries(raw?.[key] ?? {})) if (!lib?.[key]?.[id]) up[`public/lib/${key}/${id}`] = v;
+  }
+  for (const key of LEGACY) if (raw?.[key]) up[`public/${key}`] = null;
+  return up;
+};

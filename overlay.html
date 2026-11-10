@@ -25,11 +25,12 @@ import { h, fill } from "./dom.js";
 import { colorOf, scorebirdUrl, sideName } from "./logic.js";
 
 // ?glace=1&mode=live | next | url  (url = overlay Scorebird complet du match en cours)
+// ?tournoi=ID fixe un tournoi ; sinon l'overlay suit le tournoi actif choisi dans le dashboard.
 const p = new URLSearchParams(location.search);
 const glace = p.get("glace") ?? "1";
 const mode = ["next", "url"].includes(p.get("mode")) ? p.get("mode") : "live";
 const box = document.getElementById("box");
-const CACHE = "tournoi-public";
+const cacheKey = (id) => `tournoi-${id}`;
 
 const dateFR = (d) => {
   const dt = new Date(`${d}T12:00:00`);
@@ -77,16 +78,38 @@ function render(pub) {
   box.style.display = "inline-block";
 }
 
-// Dernier etat connu : affiche tout de suite, meme si le reseau est lent ou coupe.
-let data = null;
-try { data = JSON.parse(localStorage.getItem(CACHE) ?? "null"); } catch { data = null; }
-if (data) render(data);
+// Dernier etat connu, par tournoi : affiche tout de suite, meme si le reseau est lent ou coupe,
+// sans jamais montrer les donnees d'un autre tournoi apres un changement.
+let unsub = null;
+let watching = null;
+function watch(id) {
+  unsub?.();
+  unsub = null;
+  watching = id;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(cacheKey(id)) ?? "null"); } catch { cached = null; }
+  render(cached);
+  unsub = onValue(ref(db, `public/tournois/${id}`), (s) => {
+    const data = s.val();
+    render(data);
+    try { localStorage.setItem(cacheKey(id), JSON.stringify(data)); } catch { /* cache plein ou indisponible : on continue sans */ }
+  }, () => { /* erreur reseau : on garde le dernier etat affiche */ });
+}
 
-onValue(ref(db, "public"), (s) => {
-  data = s.val();
-  render(data);
-  try { localStorage.setItem(CACHE, JSON.stringify(data)); } catch { /* cache plein ou indisponible : on continue sans */ }
-}, () => { /* erreur reseau : on garde le dernier etat affiche */ });
+const fixed = p.get("tournoi");
+if (fixed) {
+  watch(fixed);
+} else {
+  let last = null;
+  try { last = localStorage.getItem("tournoi-actif"); } catch { last = null; }
+  if (last) watch(last);
+  onValue(ref(db, "public/actif"), (s) => {
+    const id = s.val();
+    try { if (id) localStorage.setItem("tournoi-actif", id); else localStorage.removeItem("tournoi-actif"); } catch { /* idem */ }
+    if (id && id !== watching) watch(id);
+    if (!id) { unsub?.(); unsub = null; watching = null; render(null); }
+  }, () => { /* erreur reseau : on garde le dernier etat affiche */ });
+}
 </script>
 </body>
 </html>

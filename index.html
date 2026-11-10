@@ -21,6 +21,9 @@
   .badge.up { border-color: var(--ok); color: var(--ok); }
   .banner { background: rgba(245,158,11,.12); border: 1px solid #f59e0b; color: #fbbf24; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
   .meta { color: var(--mut); font-size: 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--bd); }
+  .assoc { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 100%; padding-left: 26px; }
+  .assoc select { max-width: 260px; }
   .page { display: flex; flex-direction: column; gap: 16px; }
   .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -108,25 +111,34 @@
   <span id="conn" class="badge">Hors ligne</span>
   <span id="user"></span>
 </header>
+<div id="bar" class="bar"></div>
 <nav id="tabs"></nav>
 <main id="app"></main>
 <div id="toast"></div>
 
 <script type="module">
 import {
-  db, auth, ref, onValue, set, update, push,
+  db, auth, ref, onValue, get, set, update, push,
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "./firebase.js";
 import { h, fill } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces, matchesUsing, normName, pairFullNames,
+  fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
 import { TEAMS, SPONSORS } from "./seed.js";
 
+// pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
 let pub = {};
 let priv = {};
+let lib = {};
+let actif = null;
+let liste = {};
+let cur = null;
+let legacy = {};
+let tid = null;
 let user = null;
 let online = false;
 let tab = `glace${new URLSearchParams(location.search).get("glace") === "2" ? 2 : 1}`;
@@ -149,6 +161,10 @@ const w = async (fn) => {
 };
 const put = (path, val) => w(() => set(ref(db, path), val === "" || val === undefined ? null : val));
 const btn = (label, fn, cls = "") => h("button", { class: cls, onclick: fn }, label);
+
+// Chemin de base du tournoi selectionne : seul point d'entree, a n'appeler que lorsqu'un tournoi est selectionne.
+const base = () => `public/tournois/${tid}`;
+const refreshView = () => { pub = { ...(cur ?? {}), lib, actif, liste }; };
 
 /* ---------- petits morceaux ---------- */
 const T = (id) => pub.teams?.[id];
@@ -209,7 +225,7 @@ function colorControl(m, mp) {
     const mode = m[`${key}Mode`] ?? defaultMode(key);
     return h("div", { class: "color-team-row" },
       m[key] && h("input", { type: "color", value: safeColor(colorOf(T(m[key]), mode)),
-        onchange: (e) => put(`public/teams/${m[key]}/${mode === "Primary" ? "primary" : "secondary"}`, e.target.value) }),
+        onchange: (e) => put(`${base()}/teams/${m[key]}/${mode === "Primary" ? "primary" : "secondary"}`, e.target.value) }),
       h("div", { class: "color-team-info" },
         h("span", { class: "color-team-label" }, label),
         h("span", { class: "color-team-name-label" }, sideName(m, key, pub.teams) || "—")),
@@ -224,7 +240,7 @@ function colorControl(m, mp) {
 function matchCard(id) {
   const m = pub.matches?.[id];
   if (!m) return h("div", { class: "match-card empty" }, "Aucun match");
-  const mp = `public/matches/${id}/`;
+  const mp = `${base()}/matches/${id}/`;
   const sponsor = pub.sponsors?.[m.sponsor];
   return h("div", { class: "match-card" },
     h("div", { class: "match-meta" },
@@ -253,10 +269,10 @@ function overlayLinks(g) {
 const PILL = { Live: "live", "À venir": "upcoming", "Complété": "done" };
 
 function schedule(g, list, gl) {
-  const gp = `public/glaces/${g}/`;
+  const gp = `${base()}/glaces/${g}/`;
   const rows = list.map((m) => ({ m, st: statut(list, gl.live, m.id) })).filter((r) => filtre === "Tous" || r.st === filtre);
   const score = (m, key) => h("input", { type: "number", min: 0, class: "score-input-sm", value: m[`${key}Score`] ?? "", placeholder: "–",
-    onchange: (e) => put(`public/matches/${m.id}/${key}Score`, e.target.value === "" ? null : Number(e.target.value)) });
+    onchange: (e) => put(`${base()}/matches/${m.id}/${key}Score`, e.target.value === "" ? null : Number(e.target.value)) });
   return h("div", { class: "schedule-panel" },
     h("div", { class: "schedule-header" }, h("h2", {}, "📋 Horaire"),
       h("div", { class: "filter-tabs" }, ["Tous", "Live", "À venir", "Complété"].map((f) =>
@@ -276,11 +292,11 @@ function schedule(g, list, gl) {
 
 function glacePage(g) {
   const gl = pub.glaces?.[g] ?? {};
-  const gp = `public/glaces/${g}/`;
+  const gp = `${base()}/glaces/${g}/`;
   const list = sortMatches(pub.matches, g);
   const valider = () => {
     if (!gl.next) return toast("Aucun prochain match à valider");
-    w(() => update(ref(db, `public/glaces/${g}`), { live: gl.next, next: following(list, gl.next) }));
+    w(() => update(ref(db, `${base()}/glaces/${g}`), { live: gl.next, next: following(list, gl.next) }));
   };
   return h("div", { class: "page" },
     h("div", { class: "glace-title" },
@@ -310,12 +326,12 @@ function horaire() {
 
   const add = () => {
     const num = Math.max(0, ...Object.values(pub.matches ?? {}).map((m) => m.num ?? 0)) + 1;
-    w(() => push(ref(db, "public/matches"), { num, glace: 1 }));
+    w(() => push(ref(db, `${base()}/matches`), { num, glace: 1 }));
   };
   const del = (id) => {
     if (!confirm("Supprimer ce match ?")) return;
-    put(`public/matches/${id}`, null);
-    put(`prive/${id}`, null);
+    put(`${base()}/matches/${id}`, null);
+    put(`prive/${tid}/${id}`, null);
   };
   const text = (path, val, type = "text", cls = "") =>
     h("input", { type, value: val ?? "", class: cls, onchange: (e) => put(path, e.target.value) });
@@ -326,7 +342,7 @@ function horaire() {
     h("select", { onchange: (e) => put(path, e.target.value) }, optionsOf(obj, cur, label, empty));
 
   const tr = ({ m, st }) => {
-    const mp = `public/matches/${m.id}/`;
+    const mp = `${base()}/matches/${m.id}/`;
     const pv = priv[m.id] ?? {};
     return h("tr", {},
       h("td", {}, text(`${mp}num`, m.num, "number", "n")),
@@ -340,8 +356,8 @@ function horaire() {
       h("td", {}, num(`${mp}awayScore`, m.awayScore), " – ", num(`${mp}homeScore`, m.homeScore)),
       h("td", {}, sel(`${mp}home`, pub.teams, m.home, (t) => t.nom, m.homeRef ?? "—")),
       h("td", {}, sel(`${mp}sponsor`, pub.sponsors, m.sponsor, (s) => s.nom)),
-      h("td", {}, text(`prive/${m.id}/camera`, pv.camera)),
-      h("td", {}, text(`prive/${m.id}/note`, pv.note)),
+      h("td", {}, text(`prive/${tid}/${m.id}/camera`, pv.camera)),
+      h("td", {}, text(`prive/${tid}/${m.id}/note`, pv.note)),
       h("td", {}, h("span", { class: `pill ${st}` }, st)),
       h("td", {}, btn("✕", () => del(m.id), "bad")));
   };
@@ -356,39 +372,75 @@ function horaire() {
 }
 
 /* ---------- Equipes et commanditaires ---------- */
-const picked = { teams: new Set(), sponsors: new Set() };
+const picked = {}; // selection par liste (cle : chemin de la liste)
 const USED_BY = { teams: ["away", "home"], sponsors: ["sponsor"] };
 
-// Liste modifiable (equipes ou commanditaires) avec selection multiple pour supprimer.
-// fields : "colors" ajoute les couleurs ; "complet" ajoute le nom complet (le nom court est celui de l'horaire).
-function collection(key, title, fields, seed) {
-  const items = pub[key] ?? {};
-  const sel = picked[key];
+// Liste modifiable avec selection multiple pour supprimer.
+// scope "tournoi" : liste du tournoi selectionne, avec association a la bibliotheque (copie logo, couleurs, nom complet) ;
+// scope "lib" : la bibliotheque globale. fields : "colors", "complet" (le nom court est celui de l'horaire).
+function collection({ key, title, fields, scope }) {
+  const isLib = scope === "lib";
+  const root = isLib ? `public/lib/${key}` : `${base()}/${key}`;
+  const items = (isLib ? lib[key] : pub[key]) ?? {};
+  const libItems = lib[key] ?? {};
+  const sel = (picked[root] ??= new Set());
   for (const id of [...sel]) if (!(id in items)) sel.delete(id);
   const entries = Object.entries(items).sort((a, b) => normName(a[1].nom).localeCompare(normName(b[1].nom)));
-  const add = () => w(() => push(ref(db, `public/${key}`), { nom: "Nouveau" }));
-  const loadSeed = () => w(() => update(ref(db, `public/${key}`),
-    Object.fromEntries(seed.map((s) => [push(ref(db, `public/${key}`)).key, s]))));
+  const seed = key === "teams" ? TEAMS : SPONSORS;
+  const add = () => w(() => push(ref(db, root), { nom: "Nouveau" }));
+  const loadSeed = () => w(() => update(ref(db, root), Object.fromEntries(seed.map((s) => [push(ref(db, root)).key, s]))));
   const supprimer = async () => {
-    const used = matchesUsing(pub.matches, sel, USED_BY[key]);
+    const used = isLib ? 0 : matchesUsing(pub.matches, sel, USED_BY[key]);
     const warn = used ? `\n${used} match(s) les utilisent encore : leur nom apparaîtra vide.` : "";
     if (!confirm(`Supprimer ${sel.size} élément(s) ?${warn}\nTélécharge une sauvegarde avant si tu veux pouvoir revenir en arrière.`)) return;
-    if (await w(() => update(ref(db, `public/${key}`), Object.fromEntries([...sel].map((id) => [id, null]))))) {
+    if (await w(() => update(ref(db, root), Object.fromEntries([...sel].map((id) => [id, null]))))) {
       sel.clear();
       render();
     }
   };
+
+  // Associations avec la bibliotheque (tournoi seulement). Copie : modifier la bibliotheque plus tard ne change pas les anciens tournois.
+  const apply = (id, gid) => (gid
+    ? w(() => update(ref(db, `${root}/${id}`), { ...fromLib(libItems[gid]), lib: gid }))
+    : put(`${root}/${id}/lib`, null)); // retire le lien, garde ce qui a ete copie
+  const versBiblio = (id, o) => {
+    if (o.lib && libItems[o.lib]) {
+      if (!confirm(`Mettre à jour « ${libItems[o.lib].nom} » dans la bibliothèque avec ces valeurs ?`)) return;
+      w(() => update(ref(db, `public/lib/${key}/${o.lib}`), toLib(o)));
+    } else {
+      const gid = push(ref(db, `public/lib/${key}`)).key;
+      w(() => update(ref(db), { [`public/lib/${key}/${gid}`]: toLib(o), [`${root}/${id}/lib`]: gid }));
+    }
+  };
+  const suggestions = isLib ? [] : entries.filter(([, o]) => !o.lib).map(([id, o]) => [id, libCandidates(o, libItems)]).filter(([, c]) => c.length === 1);
+  const appliquerSuggestions = () => {
+    const noms = suggestions.map(([id, [gid]]) => `${items[id].nom} → ${libItems[gid].nom}`).join("\n");
+    if (!confirm(`Appliquer ces ${suggestions.length} associations ?\n${noms}`)) return;
+    w(() => update(ref(db), Object.fromEntries(suggestions.flatMap(([id, [gid]]) =>
+      Object.entries({ ...fromLib(libItems[gid]), lib: gid }).map(([k, v]) => [`${root}/${id}/${k}`, v])))));
+  };
+  const assoc = (id, o) => {
+    const cands = o.lib ? [] : libCandidates(o, libItems);
+    return h("div", { class: "assoc" },
+      h("select", { title: "Associer à la bibliothèque : copie le logo, les couleurs et le nom complet", onchange: (e) => apply(id, e.target.value) },
+        optionsOf(libItems, o.lib, (l) => (l.complet ? `${l.nom} (${l.complet})` : l.nom), "Associer à la bibliothèque…")),
+      cands.slice(0, 3).map((gid) => btn(`Suggestion : ${libItems[gid].nom}`, () => apply(id, gid), "ok")),
+      o.lib && libItems[o.lib] && btn("↻ Resynchroniser", () => apply(id, o.lib)),
+      btn("→ Bibliothèque", () => versBiblio(id, o)));
+  };
+
   return h("div", {},
     h("div", { class: "row", style: "margin:8px 0" },
       btn(`+ ${title}`, add, "ok"),
-      !entries.length && btn("Charger les données de départ", loadSeed),
+      isLib && !entries.length && btn("Charger les données de départ", loadSeed),
+      suggestions.length > 0 && btn(`Appliquer les ${suggestions.length} suggestions`, appliquerSuggestions, "ok"),
       entries.length > 0 && btn(sel.size === entries.length ? "Tout désélectionner" : "Tout sélectionner", () => {
         if (sel.size === entries.length) sel.clear(); else entries.forEach(([id]) => sel.add(id));
         render();
       }),
       sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, supprimer, "bad")),
     h("div", { class: "list" }, entries.map(([id, o]) => {
-      const p = `public/${key}/${id}/`;
+      const p = `${root}/${id}/`;
       return h("div", { class: "item" },
         h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
         h("input", { type: "text", placeholder: "Nom court (affiché dans l'horaire)", title: "Nom court, utilisé dans l'horaire et l'overlay", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
@@ -398,20 +450,26 @@ function collection(key, title, fields, seed) {
           h("input", { type: "color", title: "Secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
         ],
         logoInputs(`${p}logo`, o.logo),
-        btn("✕", () => { if (confirm(`Supprimer ${o.nom} ?`)) put(`public/${key}/${id}`, null); }, "bad"));
+        btn("✕", () => { if (confirm(`Supprimer ${o.nom} ?`)) put(`${root}/${id}`, null); }, "bad"),
+        !isLib && assoc(id, o));
     })));
 }
 
 /* ---------- Importer un horaire ---------- */
-const imp = { text: "", year: new Date().getFullYear(), result: null, glaces: {}, teams: [], teamMap: {}, full: new Map() };
+const imp = { text: "", year: new Date().getFullYear(), dest: "current", newName: "Nouveau tournoi", result: null, glaces: {}, teams: [], teamMap: {}, full: new Map() };
+
+// Destination : le tournoi selectionne, ou un nouveau tournoi (sans equipes ni matchs : rien n'est associe a un autre tournoi).
+const toNew = () => imp.dest === "new" || !tid;
+const destTeams = () => (toNew() ? {} : pub.teams ?? {});
+const destMatches = () => (toNew() ? {} : pub.matches ?? {});
 
 function analyser() {
   const r = parseSchedule(imp.text, imp.year);
-  const have = new Set(Object.values(pub.matches ?? {}).map((m) => m.num));
+  const have = new Set(Object.values(destMatches()).map((m) => m.num));
   imp.result = { ...r, todo: r.matches.filter((m) => !have.has(m.num)), dupes: r.matches.filter((m) => have.has(m.num)) };
   const lieux = [...new Set(imp.result.todo.map((m) => m.lieu))];
   imp.glaces = defaultGlaces(lieux);
-  const idx = teamIndex(pub.teams);
+  const idx = teamIndex(destTeams());
   const names = uniqueTeams(imp.result.todo);
   const { full, ambiguous } = pairFullNames(names.map((t) => t.nom), r.cells ?? []);
   imp.full = full;
@@ -435,24 +493,24 @@ async function choisirFichier(e) {
 
 async function lancerImport() {
   const { todo } = imp.result;
-  const updates = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key,
-    { teams: pub.teams, fullNames: imp.full });
-  if (await w(() => update(ref(db, "public"), updates))) {
+  const isNew = toNew();
+  const nid = isNew ? push(ref(db)).key : tid;
+  const rows = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key,
+    { teams: destTeams(), fullNames: imp.full });
+  const updates = {
+    ...prefixKeys(rows, `public/tournois/${nid}`),
+    ...(isNew ? newTournament(nid, imp.newName.trim() || "Nouveau tournoi", Date.now()) : {}),
+    ...(isNew && !actif ? { "public/actif": nid } : {}),
+  };
+  if (await w(() => update(ref(db), updates))) {
     toast(`${todo.length} matchs importés`);
     imp.text = "";
     imp.result = null;
+    imp.dest = "current";
+    if (isNew) selectTournament(nid);
     tab = "horaire";
     render();
   }
-}
-
-function vider() {
-  if (!confirm("Supprimer TOUT l'horaire (matchs, caméramans et notes) ? Télécharge une sauvegarde avant. Irréversible.")) return;
-  w(() => update(ref(db), {
-    "public/matches": null, "prive": null,
-    "public/glaces/1/live": null, "public/glaces/1/next": null,
-    "public/glaces/2/live": null, "public/glaces/2/next": null,
-  }));
 }
 
 function importer() {
@@ -465,20 +523,20 @@ function importer() {
 
   const resultat = !r ? null : r.error ? h("div", { class: "banner" }, r.error) : [
     h("div", { class: "item" }, h("b", {}, `${r.todo.length} matchs à importer`),
-      h("span", { class: "meta" }, `${r.dupes.length} déjà dans l'horaire (même numéro, ignorés) · ${r.skipped.length} lignes ignorées`)),
+      h("span", { class: "meta" }, `${r.dupes.length} déjà dans le tournoi (même numéro, ignorés) · ${r.skipped.length} lignes ignorées`)),
     Object.keys(imp.glaces).length > 0 && h("div", { class: "item" }, h("b", {}, "Glace de chaque lieu"),
       Object.keys(imp.glaces).map((lieu) => h("label", {}, `${lieu || "(sans lieu)"} → `,
         h("select", { onchange: (e) => { imp.glaces[lieu] = Number(e.target.value); render(); } },
           [1, 2].map((g) => h("option", { value: g, selected: imp.glaces[lieu] === g }, `Glace ${g}`)))))),
     imp.teams.length > 0 && h("div", { class: "list" },
-      h("b", {}, `${imp.teams.length} équipes (noms pris tels quels dans l'horaire)`),
+      h("b", {}, `${imp.teams.length} équipes (noms pris tels quels dans l'horaire, créées dans le tournoi)`),
       imp.teams.map((t) => h("div", { class: "item" },
         h("b", {}, t.nom),
-        h("span", { class: "pill" }, imp.teamMap[t.key] ? "existe déjà" : "nouvelle"),
+        h("span", { class: "pill" }, imp.teamMap[t.key] ? "déjà dans le tournoi" : "nouvelle"),
         t.complet && h("span", { class: "meta" }, `nom complet : ${t.complet}`),
         t.ambig && h("span", { class: "meta" }, `plusieurs noms complets possibles, aucun choisi : ${t.ambig.join(" / ")}`),
         h("select", { onchange: (e) => { imp.teamMap[t.key] = e.target.value; render(); } },
-          optionsOf(pub.teams, imp.teamMap[t.key], (x) => x.nom, "Nouvelle équipe (créée)"))))),
+          optionsOf(destTeams(), imp.teamMap[t.key], (x) => x.nom, "Nouvelle équipe (créée)"))))),
     r.skipped.length > 0 && h("details", { class: "item" }, h("summary", {}, "Lignes ignorées"),
       h("div", { class: "list" }, r.skipped.map((s) => h("div", { class: "meta" }, `Ligne ${s.line} (${s.reason}) : ${s.raw}`)))),
     apercu(r.todo),
@@ -486,6 +544,12 @@ function importer() {
   ];
 
   return h("div", { class: "list" },
+    h("div", { class: "item" },
+      h("b", {}, "Tournoi de destination"),
+      h("select", { onchange: (e) => { imp.dest = e.target.value; if (imp.result) analyser(); else render(); } },
+        tid && h("option", { value: "current", selected: !toNew() }, `Dans « ${liste[tid]?.nom ?? ""} »`),
+        h("option", { value: "new", selected: toNew() }, "Nouveau tournoi")),
+      toNew() && h("input", { type: "text", value: imp.newName, placeholder: "Nom du nouveau tournoi", onchange: (e) => { imp.newName = e.target.value; } })),
     h("div", { class: "item" },
       h("b", {}, "Fichier"),
       h("input", { type: "file", accept: ".pdf,.xlsx,.xls,.csv,.txt,.tsv", onchange: choisirFichier }),
@@ -499,21 +563,22 @@ function importer() {
       h("label", { class: "meta" }, "Année (si les dates n'en ont pas) ",
         h("input", { type: "number", min: 2000, max: 2100, value: imp.year, onchange: (e) => { imp.year = Number(e.target.value); } })),
       btn("Analyser", analyser, "ok")),
-    resultat,
-    h("div", { class: "item" }, btn("Vider l'horaire…", vider, "bad"),
-      h("span", { class: "meta" }, "Efface tous les matchs, caméramans et notes, pour commencer un nouveau tournoi.")));
+    resultat);
 }
 
 /* ---------- Sauvegarde ---------- */
 function sauvegarde() {
-  const exporter = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify({ public: pub, prive: priv }, null, 2)], { type: "application/json" }));
-    a.download = `capti-tournoi-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const exporter = async () => {
+    try {
+      const [p, v] = await Promise.all([get(ref(db, "public")), get(ref(db, "prive"))]);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ public: p.val(), prive: v.val() }, null, 2)], { type: "application/json" }));
+      a.download = `capti-tournoi-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) { toast(`Sauvegarde impossible : ${err.message}`); }
   };
-  const importer = async (e) => {
+  const restaurer = async (e) => {
     const f = e.target.files[0];
     if (!f || !confirm("Remplacer TOUTES les données par ce fichier ?")) return;
     try {
@@ -521,36 +586,130 @@ function sauvegarde() {
       if (typeof d.public !== "object" || d.public === null) throw new Error("fichier invalide");
       await w(() => set(ref(db, "public"), d.public));
       await w(() => set(ref(db, "prive"), d.prive ?? null));
-      toast("Importé");
-    } catch (err) { toast(`Import impossible : ${err.message}`); }
+      toast("Restauré");
+    } catch (err) { toast(`Restauration impossible : ${err.message}`); }
+  };
+  const supprimerTournoi = async () => {
+    if (!tid || !confirm(`Supprimer le tournoi « ${liste[tid]?.nom} » ? Ses équipes, commanditaires, matchs et notes seront effacés (les bibliothèques restent). Télécharge une sauvegarde avant. Irréversible.`)) return;
+    await w(() => update(ref(db), {
+      [`public/tournois/${tid}`]: null, [`public/liste/${tid}`]: null, [`prive/${tid}`]: null,
+      ...(actif === tid ? { "public/actif": null } : {}),
+    }));
   };
   return h("div", { class: "list" },
     h("div", { class: "item" }, btn("Télécharger une sauvegarde (JSON)", exporter, "ok"),
-      h("span", { class: "meta" }, "À faire avant chaque tournoi et à la fin de chaque journée.")),
-    h("div", { class: "item" }, h("span", {}, "Restaurer depuis un fichier :"), h("input", { type: "file", accept: ".json", onchange: importer })),
+      h("span", { class: "meta" }, "Tous les tournois, les bibliothèques et les notes privées. À faire avant chaque tournoi et à la fin de chaque journée.")),
+    h("div", { class: "item" }, h("span", {}, "Restaurer depuis un fichier :"), h("input", { type: "file", accept: ".json", onchange: restaurer })),
+    tid && h("div", { class: "item" }, btn("Supprimer ce tournoi…", supprimerTournoi, "bad"),
+      h("span", { class: "meta" }, `« ${liste[tid]?.nom ?? ""} » : équipes, commanditaires, matchs et notes. Les bibliothèques ne sont pas touchées.`)),
     user && h("div", { class: "item" }, h("span", { class: "meta" }, "Ton UID (à coller dans database.rules.json) :"), h("code", {}, user.uid)));
 }
 
+/* ---------- tournois : selection et abonnements ---------- */
+let unsubCur = null;
+let unsubPriv = null;
+
+// Un seul abonnement au tournoi selectionne (et a ses notes privees) : on ne telecharge pas les autres tournois.
+function subscribe() {
+  unsubCur?.(); unsubCur = null; cur = null;
+  unsubPriv?.(); unsubPriv = null; priv = {};
+  if (tid) {
+    unsubCur = onValue(ref(db, `public/tournois/${tid}`), (s) => { cur = s.val(); refreshView(); rerender(); }, () => toast("Lecture impossible"));
+    if (user) unsubPriv = onValue(ref(db, `prive/${tid}`), (s) => { priv = s.val() ?? {}; rerender(); }, () => { priv = {}; });
+  }
+  refreshView();
+}
+
+function selectTournament(id) {
+  tid = id;
+  try { if (id) localStorage.setItem("tournoi-tid", id); else localStorage.removeItem("tournoi-tid"); } catch { /* stockage indisponible : on continue */ }
+  subscribe();
+  rerender();
+}
+
+// Le tournoi choisi doit exister ; sinon : le dernier utilise, le tournoi actif, puis le premier de la liste.
+function ensureSelection() {
+  let stored = null;
+  try { stored = localStorage.getItem("tournoi-tid"); } catch { /* idem */ }
+  const want = [tid, stored, actif, ...Object.keys(liste)].find((x) => x && liste[x]) ?? null;
+  if (want !== tid) selectTournament(want);
+}
+
+async function nouveauTournoi() {
+  const nom = prompt("Nom du nouveau tournoi ?")?.trim();
+  if (!nom) return;
+  const id = push(ref(db)).key;
+  if (await w(() => update(ref(db), { ...newTournament(id, nom, Date.now()), ...(actif ? {} : { "public/actif": id }) }))) selectTournament(id);
+}
+
+function renommerTournoi() {
+  const nom = prompt("Nouveau nom du tournoi ?", liste[tid]?.nom ?? "")?.trim();
+  if (nom) w(() => update(ref(db), { [`public/tournois/${tid}/nom`]: nom, [`public/liste/${tid}/nom`]: nom }));
+}
+
 /* ---------- squelette ---------- */
-const TABS = [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
+const TABS = [["glace1", "Glace 1"], ["glace2", "Glace 2"], ["horaire", "Horaire"], ["importer", "Importer"], ["equipes", "Équipes"],
+  ["sponsors", "Commanditaires"], ["biblio", "Bibliothèque"], ["sauvegarde", "Sauvegarde"]];
+let libTab = "teams";
+
+const noTournament = () => h("div", { class: "match-card empty" },
+  "Aucun tournoi. Crée-en un avec « + Nouveau », ou importe un horaire dans un nouveau tournoi (onglet Importer).");
+const needT = (fn) => () => (tid ? fn() : noTournament());
+
+function biblio() {
+  const t = libTab === "teams";
+  return h("div", {},
+    h("div", { class: "row", style: "margin:8px 0" },
+      btn("Équipes", () => { libTab = "teams"; render(); }, t ? "on" : ""),
+      btn("Commanditaires", () => { libTab = "sponsors"; render(); }, t ? "" : "on")),
+    h("div", { class: "meta", style: "margin-bottom:8px" }, "Bibliothèque commune à tous les tournois : tu y pioches logos, couleurs et noms complets depuis les onglets Équipes et Commanditaires d'un tournoi."),
+    collection({ key: libTab, title: t ? "Équipe" : "Commanditaire", fields: t ? ["colors", "complet"] : [], scope: "lib" }));
+}
+
+function tournamentBar() {
+  const ids = Object.keys(liste).sort((a, b) => (liste[b].cree ?? 0) - (liste[a].cree ?? 0));
+  return [
+    h("span", { class: "meta" }, "Tournoi"),
+    h("select", { onchange: (e) => selectTournament(e.target.value || null) },
+      ids.length ? ids.map((id) => h("option", { value: id, selected: id === tid }, `${liste[id].nom}${id === actif ? " ★" : ""}`)) : h("option", { value: "" }, "(aucun tournoi)")),
+    btn("+ Nouveau", nouveauTournoi),
+    tid && btn("Renommer", renommerTournoi),
+    tid && tid !== actif && btn("★ Définir comme actif", () => put("public/actif", tid), "ok"),
+    tid && tid === actif && h("span", { class: "pill live" }, "★ actif : les overlays affichent ce tournoi"),
+  ];
+}
+
+// Anciennes donnees (avant les tournois) : rangees dans les bibliotheques, une seule fois.
+function legacyBanner() {
+  if (!hasLegacy(legacy) || !user) return null;
+  const move = () => {
+    if (hasLegacyMatches(legacy)) return toast("L'ancienne structure contient des matchs : ne les déplace pas, préviens-moi.");
+    if (confirm("Ranger les anciennes équipes et les anciens commanditaires dans les bibliothèques, puis effacer l'ancienne structure ?")) w(() => update(ref(db), legacyMove(legacy, lib)));
+  };
+  return h("div", { class: "banner" }, "Anciennes données détectées (avant les tournois). ", btn("Ranger dans les bibliothèques", move, "ok"));
+}
 
 function render() {
   document.getElementById("conn").className = `badge${online ? " up" : ""}`;
   document.getElementById("conn").textContent = online ? "Connecté" : "Hors ligne";
   document.getElementById("user").replaceChildren(
     user ? btn("Déconnexion", () => signOut(auth)) : btn("Connexion Google", () => w(() => signInWithPopup(auth, new GoogleAuthProvider()))));
+  fill(document.getElementById("bar"), tournamentBar());
   document.getElementById("tabs").replaceChildren(...TABS.map(([k, l]) => btn(l, () => { tab = k; history.replaceState(null, "", k.startsWith("glace") ? `?glace=${k.slice(5)}` : location.pathname); render(); }, tab === k ? "on" : "")));
   const views = {
-    glace1: () => glacePage(1),
-    glace2: () => glacePage(2),
-    horaire,
+    glace1: needT(() => glacePage(1)),
+    glace2: needT(() => glacePage(2)),
+    horaire: needT(horaire),
     importer,
-    equipes: () => collection("teams", "Équipe", ["colors", "complet"], TEAMS),
-    sponsors: () => collection("sponsors", "Commanditaire", [], SPONSORS),
+    equipes: needT(() => collection({ key: "teams", title: "Équipe", fields: ["colors", "complet"], scope: "tournoi" })),
+    sponsors: needT(() => collection({ key: "sponsors", title: "Commanditaire", fields: [], scope: "tournoi" })),
+    biblio,
     sauvegarde,
   };
   fill(document.getElementById("app"),
     !user && h("div", { class: "banner" }, "Mode lecture seule : connecte-toi pour modifier."),
+    legacyBanner(),
+    tid && actif && tid !== actif && h("div", { class: "banner" }, `Ce tournoi n'est pas le tournoi actif : les overlays affichent « ${liste[actif]?.nom ?? "?"} ».`),
     views[tab]());
 }
 
@@ -562,13 +721,13 @@ const rerender = () => {
 document.addEventListener("change", (e) => e.target.blur());
 document.addEventListener("focusout", () => { if (dirty) { dirty = false; setTimeout(render, 0); } });
 
+const failed = () => toast("Lecture impossible");
 onValue(ref(db, ".info/connected"), (s) => { online = s.val() === true; rerender(); });
-onValue(ref(db, "public"), (s) => { pub = s.val() ?? {}; rerender(); }, () => toast("Lecture impossible"));
-onAuthStateChanged(auth, (u) => {
-  user = u;
-  rerender();
-  if (u) onValue(ref(db, "prive"), (s) => { priv = s.val() ?? {}; rerender(); }, () => { priv = {}; });
-});
+onValue(ref(db, "public/lib"), (s) => { lib = s.val() ?? {}; refreshView(); rerender(); }, failed);
+onValue(ref(db, "public/actif"), (s) => { actif = s.val(); ensureSelection(); refreshView(); rerender(); }, failed);
+onValue(ref(db, "public/liste"), (s) => { liste = s.val() ?? {}; ensureSelection(); rerender(); }, failed);
+for (const k of ["teams", "sponsors", "matches", "glaces"]) onValue(ref(db, `public/${k}`), (s) => { legacy[k] = s.val(); rerender(); }, failed);
+onAuthStateChanged(auth, (u) => { user = u; subscribe(); rerender(); });
 render();
 </script>
 </body>
