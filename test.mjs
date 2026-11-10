@@ -213,4 +213,18 @@ assert.equal(parseSchedule(tsv([["A", "vs", "B", "8h", "POOL 1"]]), 2026).error?
 const upd2 = buildUpdate(vs.matches, {}, new Map(), (() => { let c = 0; return () => `k${++c}`; })());
 assert.equal(Object.values(upd2).find((r) => r.num === 1).round, "POOL 2");
 
+/* ---------- Nom court / nom complet, suppression multiple ---------- */
+import { matchesUsing } from "./logic.js";
+const eq = { a: { nom: "EXPRESS", complet: "Express de Mont-Joli" }, b: { nom: "FLYERS" }, c: { nom: "Express de Mont-Joli" } };
+const eqIdx = teamIndex(eq);
+assert.equal(eqIdx.get(normName("express")), "a"); // nom court
+assert.equal(eqIdx.get(normName("EXPRESS DE MONT-JOLI")), "c"); // le nom court d'une autre equipe a priorite
+assert.equal(teamIndex({ a: eq.a, b: eq.b }).get(normName("express de mont-joli")), "a"); // nom complet
+assert.equal(teamIndex({ a: { nom: "X", complet: "" } }).has(""), false);
+const mm = { 1: { away: "a", home: "b" }, 2: { away: "b", home: "c" }, 3: { sponsor: "s1" } };
+assert.equal(matchesUsing(mm, new Set(["a"]), ["away", "home"]), 1);
+assert.equal(matchesUsing(mm, new Set(["b"]), ["away", "home"]), 2);
+assert.equal(matchesUsing(mm, new Set(["s1"]), ["sponsor"]), 1);
+assert.equal(matchesUsing(undefined, new Set(["a"]), ["away"]), 0);
+
 console.log("tous les tests passent");

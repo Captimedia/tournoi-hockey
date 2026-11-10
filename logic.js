@@ -248,7 +248,17 @@ export const uniqueTeams = (matches) => {
   return [...out].map(([key, nom]) => ({ key, nom }));
 };
 
-export const teamIndex = (teams) => new Map(Object.entries(teams ?? {}).map(([id, t]) => [normName(t.nom), id]));
+// Nom court ou nom complet : les deux retrouvent la meme equipe (le nom court a priorite en cas de conflit).
+export const teamIndex = (teams) => {
+  const entries = Object.entries(teams ?? {});
+  const idx = new Map(entries.map(([id, t]) => [normName(t.nom), id]));
+  for (const [id, t] of entries) if (t.complet && !idx.has(normName(t.complet))) idx.set(normName(t.complet), id);
+  return idx;
+};
+
+// Nombre de matchs qui utilisent l'un des ids (champs : ["away", "home"] ou ["sponsor"]).
+export const matchesUsing = (matches, ids, fields) =>
+  Object.values(matches ?? {}).filter((m) => fields.some((f) => ids.has(m[f]))).length;
 
 // Construit la mise a jour multi-chemins de `public/`. teamIdByKey : cle -> id existant (ou vide = creer).
 export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId) => {

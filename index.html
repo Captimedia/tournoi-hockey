@@ -83,6 +83,7 @@
   .pill.upcoming { background: rgba(59,130,246,.12); color: var(--ac); }
   .pill.done { color: #64748b; }
   input[type=color] { padding: 0; width: 34px; height: 28px; }
+  input[type=checkbox] { width: 18px; height: 18px; padding: 0; accent-color: var(--ac); }
   .logo { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #0f172a; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .row > * { flex: 1; }
@@ -119,7 +120,7 @@ import {
 import { h, fill } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
-  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces,
+  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces, matchesUsing, normName,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
 import { TEAMS, SPONSORS } from "./seed.js";
@@ -195,7 +196,7 @@ function team(m, key, mp) {
   return h("div", { class: "team" },
     h("div", { class: "team-logo", style: `border-color:${color};box-shadow:0 0 10px ${color}55` },
       t?.logo ? h("img", { src: t.logo, alt: "" }) : name.charAt(0)),
-    h("div", { class: "team-name" }, name),
+    h("div", { class: "team-name", title: t?.complet ?? "" }, name),
     h("div", { class: "score" },
       btn("−", () => setScore(Math.max(0, (score ?? 0) - 1))),
       h("input", { type: "number", min: 0, class: "score-input", value: score ?? "", placeholder: "–",
@@ -355,19 +356,43 @@ function horaire() {
 }
 
 /* ---------- Equipes et commanditaires ---------- */
+const picked = { teams: new Set(), sponsors: new Set() };
+const USED_BY = { teams: ["away", "home"], sponsors: ["sponsor"] };
+
+// Liste modifiable (equipes ou commanditaires) avec selection multiple pour supprimer.
+// fields : "colors" ajoute les couleurs ; "complet" ajoute le nom complet (le nom court est celui de l'horaire).
 function collection(key, title, fields, seed) {
   const items = pub[key] ?? {};
+  const sel = picked[key];
+  for (const id of [...sel]) if (!(id in items)) sel.delete(id);
+  const entries = Object.entries(items).sort((a, b) => normName(a[1].nom).localeCompare(normName(b[1].nom)));
   const add = () => w(() => push(ref(db, `public/${key}`), { nom: "Nouveau" }));
   const loadSeed = () => w(() => update(ref(db, `public/${key}`),
     Object.fromEntries(seed.map((s) => [push(ref(db, `public/${key}`)).key, s]))));
+  const supprimer = async () => {
+    const used = matchesUsing(pub.matches, sel, USED_BY[key]);
+    const warn = used ? `\n${used} match(s) les utilisent encore : leur nom apparaîtra vide.` : "";
+    if (!confirm(`Supprimer ${sel.size} élément(s) ?${warn}\nTélécharge une sauvegarde avant si tu veux pouvoir revenir en arrière.`)) return;
+    if (await w(() => update(ref(db, `public/${key}`), Object.fromEntries([...sel].map((id) => [id, null]))))) {
+      sel.clear();
+      render();
+    }
+  };
   return h("div", {},
     h("div", { class: "row", style: "margin:8px 0" },
       btn(`+ ${title}`, add, "ok"),
-      !Object.keys(items).length && btn("Charger les données de départ", loadSeed)),
-    h("div", { class: "list" }, Object.entries(items).map(([id, o]) => {
+      !entries.length && btn("Charger les données de départ", loadSeed),
+      entries.length > 0 && btn(sel.size === entries.length ? "Tout désélectionner" : "Tout sélectionner", () => {
+        if (sel.size === entries.length) sel.clear(); else entries.forEach(([id]) => sel.add(id));
+        render();
+      }),
+      sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, supprimer, "bad")),
+    h("div", { class: "list" }, entries.map(([id, o]) => {
       const p = `public/${key}/${id}/`;
       return h("div", { class: "item" },
-        h("input", { type: "text", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
+        h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
+        h("input", { type: "text", placeholder: "Nom court (affiché dans l'horaire)", title: "Nom court, utilisé dans l'horaire et l'overlay", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
+        fields.includes("complet") && h("input", { type: "text", placeholder: "Nom complet (ex. Express de Mont-Joli)", title: "Nom complet : aussi reconnu à l'import", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) }),
         fields.includes("colors") && [
           h("input", { type: "color", title: "Primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
           h("input", { type: "color", title: "Secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
@@ -514,7 +539,7 @@ function render() {
     glace2: () => glacePage(2),
     horaire,
     importer,
-    equipes: () => collection("teams", "Équipe", ["colors"], TEAMS),
+    equipes: () => collection("teams", "Équipe", ["colors", "complet"], TEAMS),
     sponsors: () => collection("sponsors", "Commanditaire", [], SPONSORS),
     sauvegarde,
   };

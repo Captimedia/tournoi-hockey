@@ -20,6 +20,12 @@ Les onglets **Glace 1** et **Glace 2** reprennent l'ancienne page `glace1.html` 
 
 Liens directs (à mettre en favori ou sur un Stream Deck) : `index.html?glace=1` et `index.html?glace=2`.
 
+## Équipes : nom court et nom complet
+
+Chaque équipe a un **nom court** (celui de l'horaire, de l'overlay et de Scorebird, ex. `Express`) et un **nom complet** facultatif (ex. `Express de Mont-Joli`). Les deux sont modifiables dans l'onglet Équipes, et l'import reconnaît l'un ou l'autre : un horaire qui écrit `Express de Mont-Joli` retrouve l'équipe `Express`. Le nom complet s'affiche en info-bulle sur la page de la glace.
+
+Dans les onglets Équipes et Commanditaires, on peut **cocher plusieurs lignes** (ou « Tout sélectionner ») puis **Supprimer la sélection**. Le dashboard prévient si des matchs utilisent encore ces équipes. Télécharger une sauvegarde avant.
+
 ## Importer un horaire
 
 Onglet **Importer** : choisir un **fichier PDF, Excel (.xlsx) ou CSV**, ou copier les cellules dans Excel / Google Sheets (avec la ligne de titres) et les coller, puis **Analyser**, vérifier l'aperçu, **Importer**.
