@@ -227,4 +227,46 @@ assert.equal(matchesUsing(mm, new Set(["b"]), ["away", "home"]), 2);
 assert.equal(matchesUsing(mm, new Set(["s1"]), ["sponsor"]), 1);
 assert.equal(matchesUsing(undefined, new Set(["a"]), ["away"]), 0);
 
+/* ---------- Nom complet decouvert dans le fichier ---------- */
+import { pairFullNames } from "./logic.js";
+const cells = ["Pool 1", "Express de Mont-Joli", "Viking du Rocher", "Prédateurs de Forillon", "Prédateurs de Gaspé", "Flyers-de-Saint-Fabien", "Notes :"];
+const pf = pairFullNames(["Express", "Viking", "Prédateurs", "Flyers", "Conquérants"], cells);
+assert.equal(pf.full.get("EXPRESS"), "Express de Mont-Joli");
+assert.equal(pf.full.get("VIKING"), "Viking du Rocher");
+assert.equal(pf.full.get("FLYERS"), "Flyers-de-Saint-Fabien"); // tiret accepte
+assert.equal(pf.full.has("CONQUERANTS"), false); // aucun candidat : rien d'invente
+assert.equal(pf.full.has("PREDATEURS"), false); // deux candidats : on ne devine pas
+assert.deepEqual(pf.ambiguous.get("PREDATEURS"), ["Prédateurs de Forillon", "Prédateurs de Gaspé"]);
+// Un nom qui est deja une equipe de l'horaire n'est jamais pris pour un nom complet.
+assert.equal(pairFullNames(["Prédateurs", "Prédateurs Forillon"], ["Prédateurs Forillon"]).full.size, 0);
+// Les cellules du fichier sont remontees par parseSchedule (hors dates, heures et matchs a venir).
+const withRoster = parseSchedule(tsv([
+  ["Vendredi 23 janvier", "", "", "", "", "Pool 1"],
+  ["Express", "vs", "Viking", "16h", "POOL 1", "Express de Mont-Joli", "Viking du Rocher"],
+  ["3e pool 1", "vs", "Gagnant QF1", "17h", "QF1"],
+]), 2026);
+assert.ok(withRoster.cells.includes("Express de Mont-Joli"));
+assert.ok(!withRoster.cells.includes("Vendredi 23 janvier") && !withRoster.cells.includes("3e pool 1") && !withRoster.cells.includes("16h"));
+
+// Creation : le nom complet est enregistre avec l'equipe.
+let q = 0;
+const mk = () => `n${++q}`;
+const mt = withRoster.matches.slice(0, 1);
+const pr = pairFullNames(uniqueTeams(mt).map((t) => t.nom), withRoster.cells);
+const fresh = buildUpdate(mt, {}, new Map(), mk, { fullNames: pr.full });
+const express = Object.values(fresh).find((v) => v.nom === "Express");
+assert.equal(express.complet, "Express de Mont-Joli");
+// Equipe existante sans nom complet : elle l'apprend ; avec un nom complet : jamais ecrasee.
+const known = { t1: { nom: "EXPRESS" }, t2: { nom: "VIKING", complet: "Viking officiel" } };
+const learnt = buildUpdate(mt, {}, new Map([["EXPRESS", "t1"], ["VIKING", "t2"]]), mk, { teams: known, fullNames: pr.full });
+assert.equal(learnt["teams/t1/complet"], "Express de Mont-Joli");
+assert.equal(learnt["teams/t2/complet"], undefined);
+// Un nom du fichier associe a la main a une autre equipe est retenu comme nom complet.
+const alias = buildUpdate([{ num: 1, date: "2026-04-01", heure: "15:15", lieu: "", division: "", away: { nom: "L'ESCOUADE DES ILES - CHAMPIONNAT" }, home: { nom: "X" } }], {},
+  new Map([["L'ESCOUADE DES ILES - CHAMPIONNAT", "t9"]]), mk, { teams: { t9: { nom: "L'ESCOUADE DES ILES" } } });
+assert.equal(alias["teams/t9/complet"], "L'ESCOUADE DES ILES - CHAMPIONNAT");
+// Meme nom (accents ou majuscules pres) : rien a apprendre.
+const same = buildUpdate(mt, {}, new Map([["EXPRESS", "t1"]]), mk, { teams: { t1: { nom: "Express" } } });
+assert.equal(same["teams/t1/complet"], undefined);
+
 console.log("tous les tests passent");

@@ -24,6 +24,8 @@ Liens directs (à mettre en favori ou sur un Stream Deck) : `index.html?glace=1`
 
 Chaque équipe a un **nom court** (celui de l'horaire, de l'overlay et de Scorebird, ex. `Express`) et un **nom complet** facultatif (ex. `Express de Mont-Joli`). Les deux sont modifiables dans l'onglet Équipes, et l'import reconnaît l'un ou l'autre : un horaire qui écrit `Express de Mont-Joli` retrouve l'équipe `Express`. Le nom complet s'affiche en info-bulle sur la page de la glace.
 
+**Découverte automatique à l'import** : si le fichier contient aussi une liste de noms complets (ex. `Express de Mont-Joli` à côté de l'horaire qui écrit `Express`), l'aperçu les associe tout seul et l'équipe est créée avec les deux noms. Règles : la cellule doit commencer par le nom court suivi d'un espace ou d'un tiret, ne pas être elle-même une équipe de l'horaire, et être la seule candidate (s'il y en a plusieurs, rien n'est deviné et l'aperçu le signale). Une équipe existante sans nom complet l'apprend aussi, et un nom du fichier que tu associes à la main à une équipe existante est retenu comme son nom complet (jamais écrasé s'il existe déjà).
+
 Dans les onglets Équipes et Commanditaires, on peut **cocher plusieurs lignes** (ou « Tout sélectionner ») puis **Supprimer la sélection**. Le dashboard prévient si des matchs utilisent encore ces équipes. Télécharger une sauvegarde avant.
 
 ## Importer un horaire

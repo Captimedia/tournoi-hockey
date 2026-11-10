@@ -150,6 +150,15 @@ const side = (text) => {
   return ref ? { ref } : { nom: text };
 };
 
+// Textes du fichier (hors dates, heures, matchs a venir) : candidats pour les noms complets d'equipes.
+const textCells = (rows) => [
+  ...new Set(
+    rows.flat().map((c) => c.trim().replace(/\s+/g, " ")).filter(
+      (c) => c.length >= 3 && c.length <= 60 && /[a-zà-ÿ]{3}/i.test(c) && !parseDate(c, 2000) && !parseTime(c) && !placeholder(c),
+    ),
+  ),
+];
+
 // Horaire "en texte", par journee : une ligne de titre avec la date ("Vendredi 23 janvier"), puis
 // "Equipe A | vs | Equipe B | 16h | POOL 2". Pas de numero de match : numerotes dans l'ordre du fichier.
 const parseVsFormat = (rows, defaultYear) => {
@@ -191,7 +200,7 @@ export const parseSchedule = (text, defaultYear) => {
   const fail = (error) => ({ error, matches: [], skipped: [] });
   if (hi === -1) {
     const alt = parseVsFormat(rows, defaultYear);
-    return alt.matches.length ? alt : fail("Horaire non reconnu : il faut des colonnes DATE et HEURE, ou des lignes « Équipe A vs Équipe B » sous un titre de jour.");
+    return alt.matches.length ? { ...alt, cells: textCells(rows) } : fail("Horaire non reconnu : il faut des colonnes DATE et HEURE, ou des lignes « Équipe A vs Équipe B » sous un titre de jour.");
   }
 
   const keys = rows[hi].map(headerKey);
@@ -227,7 +236,7 @@ export const parseSchedule = (text, defaultYear) => {
       skipped.push({ line: i + 1, raw: r.filter((c) => c.trim()).join(" | "), reason: "pas un match reconnu" });
     }
   }
-  return { matches, skipped };
+  return { matches, skipped, cells: textCells(rows) };
 };
 
 // Glace proposee pour chaque lieu : "Glace 2" dans le nom si present, sinon l'ordre d'apparition.
@@ -248,6 +257,24 @@ export const uniqueTeams = (matches) => {
   return [...out].map(([key, nom]) => ({ key, nom }));
 };
 
+// Nom complet d'une equipe : une cellule du fichier qui commence par son nom court suivi d'un espace
+// ou d'un tiret ("Express" -> "Express de Mont-Joli") et qui n'est pas elle-meme une equipe de l'horaire.
+// Un seul candidat : appariement. Plusieurs : on ne devine pas (ambiguous).
+export const pairFullNames = (teamNoms, cells) => {
+  const used = new Set(teamNoms.map(normName));
+  const full = new Map();
+  const ambiguous = new Map();
+  for (const nom of teamNoms) {
+    const k = normName(nom);
+    const found = new Map(
+      cells.filter((c) => { const n = normName(c); return !used.has(n) && (n.startsWith(`${k} `) || n.startsWith(`${k}-`)); }).map((c) => [normName(c), c]),
+    );
+    if (found.size === 1) full.set(k, [...found.values()][0]);
+    else if (found.size > 1) ambiguous.set(k, [...found.values()]);
+  }
+  return { full, ambiguous };
+};
+
 // Nom court ou nom complet : les deux retrouvent la meme equipe (le nom court a priorite en cas de conflit).
 export const teamIndex = (teams) => {
   const entries = Object.entries(teams ?? {});
@@ -261,15 +288,28 @@ export const matchesUsing = (matches, ids, fields) =>
   Object.values(matches ?? {}).filter((m) => fields.some((f) => ids.has(m[f]))).length;
 
 // Construit la mise a jour multi-chemins de `public/`. teamIdByKey : cle -> id existant (ou vide = creer).
-export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId) => {
+// opts.teams : equipes existantes ; opts.fullNames : cle du nom court -> nom complet trouve dans le fichier.
+// Une equipe creee recoit son nom complet ; une equipe existante sans nom complet l'apprend (un nom du fichier
+// associe a une equipe existante est retenu comme nom complet, jamais ecrase s'il existe deja).
+export const buildUpdate = (matches, glaceByLieu, teamIdByKey, newId, { teams = {}, fullNames = new Map() } = {}) => {
   const updates = {};
   const ids = new Map(teamIdByKey);
+  const learned = new Set();
   const idFor = (nom) => {
     const k = normName(nom);
+    const full = fullNames.get(k);
     if (!ids.get(k)) {
       const id = newId();
       ids.set(k, id);
-      updates[`teams/${id}`] = { nom, primary: "#666666", secondary: "#dadada" };
+      updates[`teams/${id}`] = { nom, ...(full && { complet: full }), primary: "#666666", secondary: "#dadada" };
+    } else {
+      const id = ids.get(k);
+      const t = teams[id];
+      const alias = full ?? (t && normName(nom) !== normName(t.nom) ? nom : null);
+      if (t && !t.complet && alias && normName(alias) !== normName(t.nom) && !learned.has(id)) {
+        learned.add(id);
+        updates[`teams/${id}/complet`] = alias;
+      }
     }
     return ids.get(k);
   };

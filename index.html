@@ -120,7 +120,7 @@ import {
 import { h, fill } from "./dom.js";
 import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
-  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces, matchesUsing, normName,
+  parseSchedule, uniqueTeams, teamIndex, buildUpdate, defaultGlaces, matchesUsing, normName, pairFullNames,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
 import { TEAMS, SPONSORS } from "./seed.js";
@@ -403,7 +403,7 @@ function collection(key, title, fields, seed) {
 }
 
 /* ---------- Importer un horaire ---------- */
-const imp = { text: "", year: new Date().getFullYear(), result: null, glaces: {}, teams: [], teamMap: {} };
+const imp = { text: "", year: new Date().getFullYear(), result: null, glaces: {}, teams: [], teamMap: {}, full: new Map() };
 
 function analyser() {
   const r = parseSchedule(imp.text, imp.year);
@@ -412,7 +412,10 @@ function analyser() {
   const lieux = [...new Set(imp.result.todo.map((m) => m.lieu))];
   imp.glaces = defaultGlaces(lieux);
   const idx = teamIndex(pub.teams);
-  imp.teams = uniqueTeams(imp.result.todo).map((t) => ({ ...t, id: idx.get(t.key) ?? "" }));
+  const names = uniqueTeams(imp.result.todo);
+  const { full, ambiguous } = pairFullNames(names.map((t) => t.nom), r.cells ?? []);
+  imp.full = full;
+  imp.teams = names.map((t) => ({ ...t, id: idx.get(t.key) ?? "", complet: full.get(t.key), ambig: ambiguous.get(t.key) }));
   imp.teamMap = Object.fromEntries(imp.teams.map((t) => [t.key, t.id]));
   render();
 }
@@ -432,7 +435,8 @@ async function choisirFichier(e) {
 
 async function lancerImport() {
   const { todo } = imp.result;
-  const updates = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key);
+  const updates = buildUpdate(todo, imp.glaces, new Map(Object.entries(imp.teamMap)), () => push(ref(db)).key,
+    { teams: pub.teams, fullNames: imp.full });
   if (await w(() => update(ref(db, "public"), updates))) {
     toast(`${todo.length} matchs importés`);
     imp.text = "";
@@ -471,6 +475,8 @@ function importer() {
       imp.teams.map((t) => h("div", { class: "item" },
         h("b", {}, t.nom),
         h("span", { class: "pill" }, imp.teamMap[t.key] ? "existe déjà" : "nouvelle"),
+        t.complet && h("span", { class: "meta" }, `nom complet : ${t.complet}`),
+        t.ambig && h("span", { class: "meta" }, `plusieurs noms complets possibles, aucun choisi : ${t.ambig.join(" / ")}`),
         h("select", { onchange: (e) => { imp.teamMap[t.key] = e.target.value; render(); } },
           optionsOf(pub.teams, imp.teamMap[t.key], (x) => x.nom, "Nouvelle équipe (créée)"))))),
     r.skipped.length > 0 && h("details", { class: "item" }, h("summary", {}, "Lignes ignorées"),
