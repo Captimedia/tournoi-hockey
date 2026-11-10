@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "public": {
+      ".read": true,
+      ".write": "auth.uid === 'REMPLACER_PAR_TON_UID'"
+    },
+    "prive": {
+      ".read": "auth.uid === 'REMPLACER_PAR_TON_UID'",
+      ".write": "auth.uid === 'REMPLACER_PAR_TON_UID'"
+    }
+  }
+}

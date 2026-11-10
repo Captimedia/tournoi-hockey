@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capti Tournoi</title>
+<style>
+  :root { --bg:#0a0e17; --card:#111827; --bd:#1e293b; --tx:#f1f5f9; --mut:#94a3b8; --ac:#3b82f6; --ok:#22c55e; --bad:#ef4444; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--tx); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--bd); }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  nav { display: flex; gap: 4px; padding: 8px 16px; flex-wrap: wrap; }
+  main { padding: 8px 16px 40px; max-width: 1500px; margin: 0 auto; }
+  button, select, input { font: inherit; color: var(--tx); background: #0f172a; border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; } button:hover { border-color: var(--ac); }
+  button.on, nav button.on { background: var(--ac); border-color: var(--ac); }
+  button.ok { background: rgba(34,197,94,.15); border-color: var(--ok); color: var(--ok); }
+  button.bad { color: var(--bad); }
+  .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid var(--bad); color: var(--bad); }
+  .badge.up { border-color: var(--ok); color: var(--ok); }
+  .banner { background: rgba(245,158,11,.12); border: 1px solid #f59e0b; color: #fbbf24; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
+  .glaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .glace { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .glace h2 { margin: 0; font-size: 18px; display: flex; gap: 8px; align-items: center; }
+  .glace h3 { margin: 6px 0 0; font-size: 11px; letter-spacing: 1.5px; color: var(--mut); }
+  .sb { width: 90px; }
+  .card { border: 1px solid var(--bd); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .card.empty { color: var(--mut); text-align: center; padding: 18px; }
+  .meta { color: var(--mut); font-size: 12px; }
+  .side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .side b { flex: 1; min-width: 120px; }
+  .score { display: flex; align-items: center; gap: 6px; font: 700 22px ui-monospace, monospace; }
+  .score span { min-width: 28px; text-align: center; }
+  .modes { display: flex; gap: 2px; }
+  input[type=color] { padding: 0; width: 34px; height: 28px; }
+  .logo { width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #0f172a; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px; border-bottom: 1px solid var(--bd); text-align: left; white-space: nowrap; }
+  th { font-size: 11px; color: var(--mut); text-transform: uppercase; }
+  td input, td select { width: 100%; min-width: 70px; }
+  td input.n { width: 56px; min-width: 0; }
+  .pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #1e293b; }
+  .pill.Live { background: rgba(239,68,68,.2); color: var(--bad); }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--bd); border-radius: 10px; padding: 8px; }
+  .item input[type=text] { flex: 1; min-width: 140px; }
+  #toast { position: fixed; bottom: 16px; right: 16px; background: var(--card); border: 1px solid var(--bd); padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  code { color: var(--mut); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Capti Tournoi</h1>
+  <span id="conn" class="badge">Hors ligne</span>
+  <span id="user"></span>
+</header>
+<nav id="tabs"></nav>
+<main id="app"></main>
+<div id="toast"></div>
+
+<script type="module">
+import {
+  db, auth, ref, onValue, set, update, push,
+  GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+} from "./firebase.js";
+import { h, fill } from "./dom.js";
+import { sortMatches, neighbor, following, statut, colorOf } from "./logic.js";
+import { TEAMS, SPONSORS } from "./seed.js";
+
+let pub = {};
+let priv = {};
+let user = null;
+let online = false;
+let tab = "direct";
+let filtre = "Tous";
+let dirty = false;
+
+/* ---------- ecriture ---------- */
+const toast = (msg) => {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove("show"), 2500);
+};
+const w = async (fn) => {
+  try { await fn(); } catch (e) { toast(`Écriture refusée (${e.code ?? e.message}). Connecté et UID autorisé ?`); }
+};
+const put = (path, val) => w(() => set(ref(db, path), val === "" || val === undefined ? null : val));
+const btn = (label, fn, cls = "") => h("button", { class: cls, onclick: fn }, label);
+
+/* ---------- petits morceaux ---------- */
+const T = (id) => pub.teams?.[id];
+const teamName = (id) => T(id)?.nom ?? "?";
+const logoImg = (src) => (src ? h("img", { class: "logo", src, alt: "" }) : h("div", { class: "logo" }));
+const optionsOf = (obj, sel, label) => [
+  h("option", { value: "" }, "—"),
+  Object.entries(obj ?? {}).map(([id, o]) => h("option", { value: id, selected: id === sel }, label(o))),
+];
+
+// Reduit une image choisie (max 200 px, PNG) pour la garder dans la base gratuite.
+async function reduceLogo(file) {
+  const bm = await createImageBitmap(file);
+  const k = Math.min(1, 200 / Math.max(bm.width, bm.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bm.width * k);
+  c.height = Math.round(bm.height * k);
+  c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
+  return c.toDataURL("image/png");
+}
+const logoInputs = (path, logo) => [
+  logoImg(logo),
+  h("input", { type: "file", accept: "image/*", onchange: async (e) => {
+    const f = e.target.files[0];
+    if (f) put(path, await reduceLogo(f));
+  } }),
+  h("input", { type: "text", placeholder: "ou URL du logo", value: /^https?:/.test(logo ?? "") ? logo : "",
+    onchange: (e) => put(path, e.target.value.trim()) }),
+];
+
+/* ---------- onglet Direct ---------- */
+function side(id, m, key) {
+  const team = T(m[key]);
+  const mode = m[`${key}Mode`] ?? (key === "away" ? "Secondary" : "Primary");
+  const score = m[`${key}Score`];
+  const mp = `public/matches/${id}/`;
+  return h("div", { class: "side" },
+    logoImg(team?.logo),
+    h("b", {}, `${key === "away" ? "Visiteur" : "Local"} : ${team?.nom ?? "—"}`),
+    h("div", { class: "score" },
+      btn("−", () => put(`${mp}${key}Score`, Math.max(0, (score ?? 0) - 1))),
+      h("span", {}, score ?? "–"),
+      btn("+", () => put(`${mp}${key}Score`, (score ?? 0) + 1))),
+    h("div", { class: "modes" },
+      ["Primary", "Secondary"].map((x) => btn(x === "Primary" ? "Pri" : "Sec", () => put(`${mp}${key}Mode`, x), mode === x ? "on" : ""))),
+    m[key] && h("input", { type: "color", value: colorOf(team, mode),
+      onchange: (e) => put(`public/teams/${m[key]}/${mode === "Primary" ? "primary" : "secondary"}`, e.target.value) }));
+}
+
+function matchCard(id) {
+  const m = pub.matches?.[id];
+  if (!m) return h("div", { class: "card empty" }, "Aucun match");
+  return h("div", { class: "card" },
+    h("div", { class: "meta" }, `#${m.num ?? "?"} · ${m.date ?? ""} ${m.heure ?? ""} · ${[m.division, m.round].filter(Boolean).join(" - ")}`),
+    side(id, m, "away"), side(id, m, "home"));
+}
+
+function overlayLinks(g) {
+  const base = new URL("overlay.html", location.href).href;
+  return h("div", { class: "row" }, [["Live", "live"], ["Next", "next"], ["Scorebird", "url"]].map(([label, mode]) =>
+    btn(`Copier URL ${label}`, async () => {
+      try { await navigator.clipboard.writeText(`${base}?glace=${g}&mode=${mode}`); toast("URL copiée"); } catch { toast("Copie impossible"); }
+    })));
+}
+
+function glaceCard(g) {
+  const gl = pub.glaces?.[g] ?? {};
+  const list = sortMatches(pub.matches, g);
+  const gp = `public/glaces/${g}/`;
+  const pick = (slot) => h("select", { onchange: (e) => put(gp + slot, e.target.value) },
+    h("option", { value: "" }, "—"),
+    list.map((m) => h("option", { value: m.id, selected: m.id === gl[slot] },
+      `#${m.num ?? "?"} ${m.heure ?? ""} ${teamName(m.away)} vs ${teamName(m.home)}`)));
+  const valider = () => {
+    if (!gl.next) return toast("Aucun prochain match à valider");
+    w(() => update(ref(db, `public/glaces/${g}`), { live: gl.next, next: following(list, gl.next) }));
+  };
+  return h("section", { class: "glace" },
+    h("h2", {}, `Glace ${g}`, h("span", { class: "meta" }, "Scorebird"),
+      h("input", { class: "sb", value: gl.scorebird ?? "", placeholder: "serial", onchange: (e) => put(`${gp}scorebird`, e.target.value.trim()) })),
+    h("h3", {}, "EN COURS"), matchCard(gl.live), pick("live"),
+    h("h3", {}, "PROCHAIN"), matchCard(gl.next), pick("next"),
+    h("div", { class: "row" },
+      btn("◀ Précédent", () => put(`${gp}next`, neighbor(list, gl.next, -1))),
+      btn("Suivant ▶", () => put(`${gp}next`, neighbor(list, gl.next, 1))),
+      btn("✓ Valider", valider, "ok")),
+    overlayLinks(g));
+}
+
+const direct = () => h("div", { class: "glaces" }, glaceCard(1), glaceCard(2));
+
+/* ---------- onglet Horaire ---------- */
+function horaire() {
+  const rows = [1, 2].flatMap((g) => {
+    const list = sortMatches(pub.matches, g);
+    return list.map((m) => ({ m, st: statut(list, pub.glaces?.[g]?.live, m.id) }));
+  }).filter((r) => filtre === "Tous" || r.st === filtre);
+
+  const add = () => {
+    const num = Math.max(0, ...Object.values(pub.matches ?? {}).map((m) => m.num ?? 0)) + 1;
+    w(() => push(ref(db, "public/matches"), { num, glace: 1 }));
+  };
+  const del = (id) => {
+    if (!confirm("Supprimer ce match ?")) return;
+    put(`public/matches/${id}`, null);
+    put(`prive/${id}`, null);
+  };
+  const text = (path, val, type = "text", cls = "") =>
+    h("input", { type, value: val ?? "", class: cls, onchange: (e) => put(path, e.target.value) });
+  const num = (path, val) =>
+    h("input", { type: "number", min: 0, class: "n", value: val ?? "",
+      onchange: (e) => put(path, e.target.value === "" ? null : Number(e.target.value)) });
+  const sel = (path, obj, cur, label) =>
+    h("select", { onchange: (e) => put(path, e.target.value) }, optionsOf(obj, cur, label));
+
+  const tr = ({ m, st }) => {
+    const mp = `public/matches/${m.id}/`;
+    const pv = priv[m.id] ?? {};
+    return h("tr", {},
+      h("td", {}, text(`${mp}num`, m.num, "number", "n")),
+      h("td", {}, h("select", { onchange: (e) => put(`${mp}glace`, Number(e.target.value)) },
+        [1, 2].map((g) => h("option", { value: g, selected: Number(m.glace) === g }, g)))),
+      h("td", {}, text(`${mp}date`, m.date, "date")),
+      h("td", {}, text(`${mp}heure`, m.heure, "time")),
+      h("td", {}, text(`${mp}division`, m.division)),
+      h("td", {}, text(`${mp}round`, m.round)),
+      h("td", {}, sel(`${mp}away`, pub.teams, m.away, (t) => t.nom)),
+      h("td", {}, num(`${mp}awayScore`, m.awayScore), " – ", num(`${mp}homeScore`, m.homeScore)),
+      h("td", {}, sel(`${mp}home`, pub.teams, m.home, (t) => t.nom)),
+      h("td", {}, sel(`${mp}sponsor`, pub.sponsors, m.sponsor, (s) => s.nom)),
+      h("td", {}, text(`prive/${m.id}/camera`, pv.camera)),
+      h("td", {}, text(`prive/${m.id}/note`, pv.note)),
+      h("td", {}, h("span", { class: `pill ${st}` }, st)),
+      h("td", {}, btn("✕", () => del(m.id), "bad")));
+  };
+
+  return h("div", {},
+    h("div", { class: "row", style: "margin:8px 0" },
+      ["Tous", "Live", "À venir", "Complété"].map((f) => btn(f, () => { filtre = f; render(); }, filtre === f ? "on" : "")),
+      btn("+ Ajouter un match", add, "ok")),
+    h("div", { class: "scroll" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["#", "Glace", "Date", "Heure", "Division", "Ronde", "Visiteur", "Score", "Local", "Commanditaire", "Caméraman", "Note", "Statut", ""].map((c) => h("th", {}, c)))),
+      h("tbody", {}, rows.map(tr)))));
+}
+
+/* ---------- Equipes et commanditaires ---------- */
+function collection(key, title, fields, seed) {
+  const items = pub[key] ?? {};
+  const add = () => w(() => push(ref(db, `public/${key}`), { nom: "Nouveau" }));
+  const loadSeed = () => w(() => update(ref(db, `public/${key}`),
+    Object.fromEntries(seed.map((s) => [push(ref(db, `public/${key}`)).key, s]))));
+  return h("div", {},
+    h("div", { class: "row", style: "margin:8px 0" },
+      btn(`+ ${title}`, add, "ok"),
+      !Object.keys(items).length && btn("Charger les données de départ", loadSeed)),
+    h("div", { class: "list" }, Object.entries(items).map(([id, o]) => {
+      const p = `public/${key}/${id}/`;
+      return h("div", { class: "item" },
+        h("input", { type: "text", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
+        fields.includes("colors") && [
+          h("input", { type: "color", title: "Primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
+          h("input", { type: "color", title: "Secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
+        ],
+        logoInputs(`${p}logo`, o.logo),
+        btn("✕", () => { if (confirm(`Supprimer ${o.nom} ?`)) put(`public/${key}/${id}`, null); }, "bad"));
+    })));
+}
+
+/* ---------- Sauvegarde ---------- */
+function sauvegarde() {
+  const exporter = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ public: pub, prive: priv }, null, 2)], { type: "application/json" }));
+    a.download = `capti-tournoi-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const importer = async (e) => {
+    const f = e.target.files[0];
+    if (!f || !confirm("Remplacer TOUTES les données par ce fichier ?")) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (typeof d.public !== "object" || d.public === null) throw new Error("fichier invalide");
+      await w(() => set(ref(db, "public"), d.public));
+      await w(() => set(ref(db, "prive"), d.prive ?? null));
+      toast("Importé");
+    } catch (err) { toast(`Import impossible : ${err.message}`); }
+  };
+  return h("div", { class: "list" },
+    h("div", { class: "item" }, btn("Télécharger une sauvegarde (JSON)", exporter, "ok"),
+      h("span", { class: "meta" }, "À faire avant chaque tournoi et à la fin de chaque journée.")),
+    h("div", { class: "item" }, h("span", {}, "Restaurer depuis un fichier :"), h("input", { type: "file", accept: ".json", onchange: importer })),
+    user && h("div", { class: "item" }, h("span", { class: "meta" }, "Ton UID (à coller dans database.rules.json) :"), h("code", {}, user.uid)));
+}
+
+/* ---------- squelette ---------- */
+const TABS = [["direct", "Direct"], ["horaire", "Horaire"], ["equipes", "Équipes"], ["sponsors", "Commanditaires"], ["sauvegarde", "Sauvegarde"]];
+
+function render() {
+  document.getElementById("conn").className = `badge${online ? " up" : ""}`;
+  document.getElementById("conn").textContent = online ? "Connecté" : "Hors ligne";
+  document.getElementById("user").replaceChildren(
+    user ? btn("Déconnexion", () => signOut(auth)) : btn("Connexion Google", () => w(() => signInWithPopup(auth, new GoogleAuthProvider()))));
+  document.getElementById("tabs").replaceChildren(...TABS.map(([k, l]) => btn(l, () => { tab = k; render(); }, tab === k ? "on" : "")));
+  const views = {
+    direct,
+    horaire,
+    equipes: () => collection("teams", "Équipe", ["colors"], TEAMS),
+    sponsors: () => collection("sponsors", "Commanditaire", [], SPONSORS),
+    sauvegarde,
+  };
+  fill(document.getElementById("app"),
+    !user && h("div", { class: "banner" }, "Mode lecture seule : connecte-toi pour modifier."),
+    views[tab]());
+}
+
+// Ne pas redessiner pendant qu'on tape dans un champ : on le fait en quittant le champ.
+const rerender = () => {
+  if (document.activeElement?.matches("input,select")) { dirty = true; return; }
+  render();
+};
+document.addEventListener("change", (e) => e.target.blur());
+document.addEventListener("focusout", () => { if (dirty) { dirty = false; setTimeout(render, 0); } });
+
+onValue(ref(db, ".info/connected"), (s) => { online = s.val() === true; rerender(); });
+onValue(ref(db, "public"), (s) => { pub = s.val() ?? {}; rerender(); }, () => toast("Lecture impossible"));
+onAuthStateChanged(auth, (u) => {
+  user = u;
+  rerender();
+  if (u) onValue(ref(db, "prive"), (s) => { priv = s.val() ?? {}; rerender(); }, () => { priv = {}; });
+});
+render();
+</script>
+</body>
+</html>
