@@ -30,6 +30,30 @@
   .pick-name { flex: 1; font-weight: 600; }
   .pick-name small { color: var(--mut); font-weight: 400; }
   #toast button { margin-left: 8px; }
+  .item.compact { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  .item.compact .nom { flex: 1; min-width: 120px; }
+  .logo-btn { padding: 0; border: none; background: none; line-height: 0; }
+  .logo-btn .logo { border: 1px dashed #334155; }
+  .logo-btn:hover .logo { border-color: var(--ac); }
+  .assoc-select { max-width: 230px; }
+  .more, .gallery { width: 100%; display: flex; flex-direction: column; gap: 8px; background: rgba(0,0,0,.2); border: 1px solid var(--bd); border-radius: 8px; padding: 8px; }
+  .more { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .uploadbtn { cursor: pointer; padding: 6px 10px; border: 1px solid var(--bd); border-radius: 8px; background: #0f172a; }
+  .uploadbtn:hover { border-color: var(--ac); }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 340px; overflow: auto; }
+  .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; }
+  .thumb img { width: 64px; height: 64px; object-fit: contain; }
+  .thumb span { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb em { font-size: 10px; color: var(--ok); font-style: normal; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 16px; max-width: 1500px; margin: 0 auto; }
+  .previews[hidden] { display: none; }
+  .pv-head { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  .pv-label { font-size: 11px; letter-spacing: 1.5px; color: #64748b; margin-bottom: 4px; }
+  .pv-frame { position: relative; height: 170px; overflow: hidden; border: 1px solid var(--bd); border-radius: 8px; background: repeating-conic-gradient(#1b2336 0% 25%, #141a29 0% 50%) 50% / 20px 20px; }
+  .pv-frame iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: top left; pointer-events: none; }
+  .pv-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--mut); font-size: 12px; text-align: center; padding: 8px; pointer-events: none; }
+  .previews[data-mode=scorebird] .pv-frame { height: 90px; }
+  @media (max-width: 900px) { .previews { grid-template-columns: 1fr; } }
   .page { display: flex; flex-direction: column; gap: 16px; }
   .glace-title { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .glace-title .icon { width: 38px; height: 38px; border-radius: 10px; background: rgba(56,189,248,.15); display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -118,6 +142,7 @@
   <span id="user"></span>
 </header>
 <div id="bar" class="bar"></div>
+<section id="previews" class="previews" hidden></section>
 <nav id="tabs"></nav>
 <main id="app"></main>
 <div id="toast"></div>
@@ -132,9 +157,11 @@ import {
   sortMatches, neighbor, following, statut, colorOf, sideName,
   parseSchedule, uniqueTeams, teamIndex, buildSync, defaultGlaces, matchesUsing, normName, pairFullNames,
   fromLib, toLib, libCandidates, prefixKeys, newTournament, legacyMove, hasLegacy, hasLegacyMatches,
-  mergeTeams, duplicateMatches, deleteMatches, restoreMatches,
+  mergeTeams, duplicateMatches, deleteMatches, restoreMatches, scorebirdUrl, galleryItems, galleryRank, safeFileName,
 } from "./logic.js";
 import { readScheduleFile } from "./import-file.js";
+import { loadTree, addToCache, publishImage, testToken } from "./galerie.js";
+import { graphiques } from "./config.js";
 import { TEAMS, SPONSORS } from "./seed.js";
 
 // pub : vue du tournoi selectionne (teams, sponsors, matches, glaces) ; lib, actif, liste : bibliotheques, tournoi actif, index des tournois.
@@ -192,25 +219,16 @@ const optionsOf = (obj, sel, label, empty = "—") => [
   Object.entries(obj ?? {}).map(([id, o]) => h("option", { value: id, selected: id === sel }, label(o))),
 ];
 
-// Reduit une image choisie (max 200 px, PNG) pour la garder dans la base gratuite.
-async function reduceLogo(file) {
+// Reduit une image choisie a `max` pixels au plus (PNG, transparence conservee).
+async function reduceImage(file, max) {
   const bm = await createImageBitmap(file);
-  const k = Math.min(1, 200 / Math.max(bm.width, bm.height));
+  const k = Math.min(1, max / Math.max(bm.width, bm.height));
   const c = document.createElement("canvas");
   c.width = Math.round(bm.width * k);
   c.height = Math.round(bm.height * k);
   c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
   return c.toDataURL("image/png");
 }
-const logoInputs = (path, logo) => [
-  logoImg(logo),
-  h("input", { type: "file", accept: "image/*", onchange: async (e) => {
-    const f = e.target.files[0];
-    if (f) put(path, await reduceLogo(f));
-  } }),
-  h("input", { type: "text", placeholder: "ou URL du logo", value: /^https?:/.test(logo ?? "") ? logo : "",
-    onchange: (e) => put(path, e.target.value.trim()) }),
-];
 
 /* ---------- Page d'une glace ---------- */
 const dateFR = (d, opts = { weekday: "long", day: "numeric", month: "long" }) => {
@@ -416,15 +434,77 @@ function horaire() {
 /* ---------- Equipes et commanditaires ---------- */
 const picked = {}; // selection par liste (cle : chemin de la liste)
 const USED_BY = { teams: ["away", "home"], sponsors: ["sponsor"] };
-let pickerFor = null; // equipe dont la liste "Choisir dans la bibliotheque" est ouverte
-let pickerQuery = "";
+let moreFor = null; // ligne dont le panneau "⋯" est ouvert
+let galFor = null; // ligne dont la galerie de logos est ouverte
+const gal = { query: "", tree: null, error: null, loading: false };
+let ghAjoute = null; // date d'ajout du jeton GitHub (marqueur non secret ; le jeton est dans secret/)
 
-// Liste modifiable avec selection multiple pour supprimer (avec Annuler).
+async function loadGallery(force = false) {
+  gal.loading = true;
+  gal.error = null;
+  render();
+  try { gal.tree = await loadTree(force); } catch (e) { gal.error = e.message; }
+  gal.loading = false;
+  render();
+}
+
+// Envoi d'un logo vers le dossier graphiques/ de GitHub : image reduite a 400 px, NOUVEAU fichier (jamais de remplacement).
+// Le jeton n'est lu qu'ici, au moment de l'envoi.
+async function ajouterLogo(file, folder, nom, setLogo) {
+  let token = null;
+  try { token = (await get(ref(db, "secret/github"))).val()?.token ?? null; } catch { token = null; }
+  if (!token) return toast("Pour ajouter un logo, enregistre d'abord ton jeton GitHub (onglet Sauvegarde).");
+  toast("Envoi du logo…");
+  try {
+    const tree = gal.tree ?? await loadTree();
+    const taken = tree.filter((x) => x.path.startsWith(`${graphiques.dossier}/${folder}/`)).map((x) => x.path.split("/").pop());
+    const name = safeFileName(nom || file.name.replace(/\.[^.]+$/, ""), "png", taken);
+    const dataUrl = await reduceImage(file, 400);
+    const url = await publishImage(token, folder, name, dataUrl.split(",")[1]);
+    addToCache(`${graphiques.dossier}/${folder}/${name}`);
+    gal.tree = await loadTree();
+    await setLogo(url);
+    toast(`Logo publié (${name}). Il sera visible dans environ une minute.`);
+  } catch (e) { toast(e.message); }
+}
+
+// Galerie des images du dossier graphiques/ (meme nom d'abord), avec recherche, actualisation et ajout.
+function galleryPanel(folder, nom, setLogo) {
+  const items = galleryRank(galleryItems(gal.tree, graphiques.dossier, folder, graphiques.base), nom);
+  const q = normName(gal.query);
+  const shown = items.filter((it) => !q || normName(it.name).includes(q));
+  return h("div", { class: "gallery" },
+    h("div", { class: "row", style: "align-items:center" },
+      h("input", { type: "text", placeholder: "Rechercher une image…", value: gal.query,
+        oninput: (e) => {
+          gal.query = e.target.value;
+          render();
+          const el = document.querySelector(".gallery input[type=text]");
+          el?.focus();
+          el?.setSelectionRange(el.value.length, el.value.length);
+        } }),
+      btn("↻ Actualiser", () => loadGallery(true)),
+      h("label", { class: "uploadbtn", title: ghAjoute ? "Réduit l'image à 400 px et la publie dans graphiques/" : "Enregistre d'abord ton jeton GitHub (onglet Sauvegarde)" },
+        "＋ Ajouter un logo…",
+        h("input", { type: "file", accept: "image/*", style: "display:none",
+          onchange: async (e) => { const f = e.target.files[0]; if (f) await ajouterLogo(f, folder, nom, setLogo); } }))),
+    gal.loading ? h("div", { class: "meta" }, "Chargement…")
+      : gal.error ? h("div", { class: "banner" }, gal.error)
+        : shown.length
+          ? h("div", { class: "thumbs" }, shown.map((it) => h("button", { class: "thumb", title: it.name, onclick: () => { setLogo(it.url); galFor = null; render(); } },
+            h("img", { src: it.url, loading: "lazy", alt: "" }),
+            h("span", {}, it.name.replace(/\.[^.]+$/, "")),
+            it.match && h("em", {}, "même nom"))))
+          : h("div", { class: "meta" }, "Aucune image."));
+}
+
+// Liste modifiable, une ligne courte par element : logo (clic = galerie), nom, couleurs, menu d'association, ⋯ et ✕.
 // scope "tournoi" : liste du tournoi selectionne, avec association a la bibliotheque (copie logo, couleurs, nom complet) ;
 // scope "lib" : la bibliotheque globale. fields : "colors", "complet" (le nom court est celui de l'horaire).
 function collection({ key, title, fields, scope }) {
   const isLib = scope === "lib";
   const root = isLib ? `public/lib/${key}` : `${base()}/${key}`;
+  const folder = key === "teams" ? "logos" : "commanditaires";
   const items = (isLib ? lib[key] : pub[key]) ?? {};
   const libItems = lib[key] ?? {};
   const sel = (picked[root] ??= new Set());
@@ -446,7 +526,6 @@ function collection({ key, title, fields, scope }) {
   };
 
   // Association avec la bibliotheque (tournoi seulement) : COPIE logo, couleurs et nom complet ; le nom court du tournoi ne change pas.
-  // Pour reprendre une version plus recente de la bibliotheque, on rechoisit simplement la meme equipe.
   const apply = (id, gid) => (gid
     ? w(() => update(ref(db, `${root}/${id}`), { ...fromLib(libItems[gid]), lib: gid }))
     : put(`${root}/${id}/lib`, null)); // dissocier : le lien disparait, ce qui a ete copie reste
@@ -473,37 +552,46 @@ function collection({ key, title, fields, scope }) {
     w(() => update(ref(db), prefixKeys(dup.updates, base())));
   };
 
-  const assoc = (id, o) => {
+  // Petit menu a droite de la ligne : la suggestion d'abord, puis le reste de la bibliotheque ; "— Dissocier" retire le lien.
+  const assocSelect = (id, o) => {
     const linked = o.lib && libItems[o.lib];
-    const cands = new Set(libCandidates(o, libItems));
-    const q = normName(pickerQuery);
-    const choices = Object.entries(libItems)
-      .filter(([, l]) => !q || normName(l.nom).includes(q) || normName(l.complet ?? "").includes(q))
-      .sort((a, b) => (cands.has(b[0]) - cands.has(a[0])) || normName(a[1].nom).localeCompare(normName(b[1].nom)));
-    const open = pickerFor === `${root}/${id}`;
-    return h("div", { class: "assoc" },
-      linked
-        ? h("span", { class: "pill ok" }, `✔ Associée à « ${libItems[o.lib].nom}${libItems[o.lib].complet ? ` (${libItems[o.lib].complet})` : ""} »`)
-        : h("span", { class: "pill" }, o.lib ? "Non associée (l'équipe de la bibliothèque n'existe plus)" : "Non associée à la bibliothèque"),
-      btn(open ? "Fermer" : "Choisir dans la bibliothèque…", () => { pickerFor = open ? null : `${root}/${id}`; pickerQuery = ""; render(); }),
-      btn("Enregistrer dans la bibliothèque", () => versBiblio(id, o)),
-      (linked || o.lib) && btn("Dissocier", () => apply(id, null)),
-      open && h("div", { class: "picker" },
-        h("input", { type: "text", placeholder: "Rechercher dans la bibliothèque…", value: pickerQuery,
-          oninput: (e) => {
-            pickerQuery = e.target.value;
-            render();
-            const el = document.querySelector(".picker input");
-            el?.focus();
-            el?.setSelectionRange(el.value.length, el.value.length);
-          } }),
-        choices.length
-          ? choices.map(([gid, l]) => h("div", { class: "pick" },
-            logoImg(l.logo),
-            h("span", { class: "pick-name" }, l.nom, l.complet && h("small", {}, ` ${l.complet}`)),
-            cands.has(gid) && h("span", { class: "pill ok" }, "même nom"),
-            btn("Utiliser", () => { apply(id, gid); pickerFor = null; })))
-          : h("div", { class: "meta" }, libItems && Object.keys(libItems).length ? "Aucun résultat." : "La bibliothèque est vide.")));
+    const cands = libCandidates(o, libItems);
+    const others = Object.keys(libItems).filter((gid) => !cands.includes(gid)).sort((a, b) => normName(libItems[a].nom).localeCompare(normName(libItems[b].nom)));
+    const opt = (gid) => h("option", { value: gid, selected: gid === o.lib }, libItems[gid].complet ? `${libItems[gid].nom} (${libItems[gid].complet})` : libItems[gid].nom);
+    return h("select", { class: "assoc-select", title: linked ? "Associée à la bibliothèque (copie du logo, des couleurs et du nom complet)" : "Associer à la bibliothèque : copie le logo, les couleurs et le nom complet",
+      onchange: (e) => apply(id, e.target.value) },
+      h("option", { value: "" }, linked ? "— Dissocier" : "Associer…"),
+      cands.length > 0 && h("optgroup", { label: "★ Suggestion" }, cands.map(opt)),
+      others.length > 0 && h("optgroup", { label: "Bibliothèque" }, others.map(opt)));
+  };
+
+  const morePanel = (id, o, p) => h("div", { class: "more" },
+    fields.includes("complet") && h("label", { class: "meta" }, "Nom complet ",
+      h("input", { type: "text", placeholder: "ex. Express de Mont-Joli", title: "Aussi reconnu à l'import", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) })),
+    !isLib && o.lib && libItems[o.lib] && btn("Reprendre la version de la bibliothèque", () => apply(id, o.lib)),
+    !isLib && btn("Enregistrer dans la bibliothèque", () => versBiblio(id, o)),
+    h("label", { class: "meta", title: "Stockée dans la base : fonctionne pour ton overlay, pas pour Scorebird" }, "Image locale ",
+      h("input", { type: "file", accept: "image/*", onchange: async (e) => { const f = e.target.files[0]; if (f) put(`${p}logo`, await reduceImage(f, 200)); } })),
+    /^https?:/.test(o.logo ?? "") && h("div", { class: "meta" }, `Adresse du logo : ${o.logo}`));
+
+  const line = ([id, o]) => {
+    const p = `${root}/${id}/`;
+    const rowKey = `${root}/${id}`;
+    const setLogo = (url) => put(`${p}logo`, url);
+    return h("div", { class: "item compact" },
+      h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
+      h("button", { class: "logo-btn", title: "Choisir un logo dans la galerie",
+        onclick: () => { galFor = galFor === rowKey ? null : rowKey; gal.query = ""; render(); if (galFor && !gal.tree) loadGallery(); } }, logoImg(o.logo)),
+      h("input", { type: "text", class: "nom", placeholder: "Nom", title: "Nom court : celui de l'horaire et de l'overlay", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
+      fields.includes("colors") && [
+        h("input", { type: "color", title: "Couleur primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
+        h("input", { type: "color", title: "Couleur secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
+      ],
+      !isLib && assocSelect(id, o),
+      btn("⋯", () => { moreFor = moreFor === rowKey ? null : rowKey; render(); }, moreFor === rowKey ? "on" : ""),
+      btn("✕", () => supprimer([id]), "bad"),
+      moreFor === rowKey && morePanel(id, o, p),
+      galFor === rowKey && galleryPanel(folder, o.nom, setLogo));
   };
 
   return h("div", {},
@@ -517,20 +605,7 @@ function collection({ key, title, fields, scope }) {
         render();
       }),
       sel.size > 0 && btn(`Supprimer la sélection (${sel.size})`, () => supprimer([...sel]), "bad")),
-    h("div", { class: "list" }, entries.map(([id, o]) => {
-      const p = `${root}/${id}/`;
-      return h("div", { class: "item" },
-        h("input", { type: "checkbox", title: "Sélectionner", checked: sel.has(id), onchange: (e) => { if (e.target.checked) sel.add(id); else sel.delete(id); render(); } }),
-        h("input", { type: "text", placeholder: "Nom court (affiché dans l'horaire)", title: "Nom court, utilisé dans l'horaire et l'overlay", value: o.nom ?? "", onchange: (e) => put(`${p}nom`, e.target.value.trim()) }),
-        fields.includes("complet") && h("input", { type: "text", placeholder: "Nom complet (ex. Express de Mont-Joli)", title: "Nom complet : aussi reconnu à l'import", value: o.complet ?? "", onchange: (e) => put(`${p}complet`, e.target.value.trim()) }),
-        fields.includes("colors") && [
-          h("input", { type: "color", title: "Primaire", value: o.primary ?? "#666666", onchange: (e) => put(`${p}primary`, e.target.value) }),
-          h("input", { type: "color", title: "Secondaire", value: o.secondary ?? "#dadada", onchange: (e) => put(`${p}secondary`, e.target.value) }),
-        ],
-        logoInputs(`${p}logo`, o.logo),
-        btn("✕", () => supprimer([id]), "bad"),
-        !isLib && assoc(id, o));
-    })));
+    h("div", { class: "list" }, entries.map(line)));
 }
 
 /* ---------- Importer un horaire ---------- */
@@ -660,6 +735,26 @@ function importer() {
     resultat);
 }
 
+// Connexion GitHub : le jeton est range dans secret/ (lisible et modifiable par ton compte seulement) et suit donc ton compte
+// sur tous tes ordinateurs. Il n'apparait dans aucun message ; seule la date d'ajout (non secrete) est lue pour l'affichage.
+async function enregistrerJeton(input) {
+  const token = input.value.trim();
+  if (token.length < 20 || /\s/.test(token)) return toast("Ce n'est pas un jeton GitHub valide.");
+  if (await w(() => update(ref(db), { "secret/github": { token, ajoute: Date.now() }, "prive/githubAjoute": Date.now() }))) {
+    input.value = "";
+    toast("Jeton enregistré.");
+  }
+}
+const retirerJeton = () => confirm("Retirer le jeton GitHub ? Tu ne pourras plus ajouter de logos depuis le dashboard.")
+  && w(() => update(ref(db), { "secret/github": null, "prive/githubAjoute": null }));
+async function tester() {
+  try {
+    const token = (await get(ref(db, "secret/github"))).val()?.token;
+    if (!token) return toast("Aucun jeton enregistré.");
+    toast((await testToken(token)) ? "✔ Le jeton fonctionne : écriture permise sur tournoi-hockey." : "Le jeton est valide, mais sans droit d'écriture sur tournoi-hockey.");
+  } catch (e) { toast(e.message); }
+}
+
 /* ---------- Sauvegarde ---------- */
 function sauvegarde() {
   const exporter = async () => {
@@ -687,7 +782,79 @@ function sauvegarde() {
     h("div", { class: "item" }, btn("Télécharger une sauvegarde (JSON)", exporter, "ok"),
       h("span", { class: "meta" }, "Tous les tournois, les bibliothèques et les notes privées. À faire avant chaque tournoi et à la fin de chaque journée.")),
     h("div", { class: "item" }, h("span", {}, "Restaurer depuis un fichier :"), h("input", { type: "file", accept: ".json", onchange: restaurer })),
+    user && h("div", { class: "item" },
+      h("b", {}, "Connexion GitHub (ajouter des logos)"),
+      ghAjoute ? h("span", { class: "pill ok" }, `✔ jeton enregistré le ${new Date(ghAjoute).toLocaleDateString("fr-CA")}`) : h("span", { class: "pill" }, "aucun jeton"),
+      h("input", { type: "password", id: "gh-token", autocomplete: "off", placeholder: "Colle ici ton jeton GitHub (commence par github_pat_)" }),
+      btn("Enregistrer", () => enregistrerJeton(document.getElementById("gh-token")), "ok"),
+      ghAjoute && btn("Tester", tester),
+      ghAjoute && btn("Retirer", retirerJeton, "bad"),
+      h("details", { class: "meta", style: "width:100%" }, h("summary", {}, "Comment créer le jeton (une seule fois)"),
+        h("ol", {},
+          h("li", {}, "Sur github.com : ton profil → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token."),
+          h("li", {}, "Nom : Capti Tournoi. Expiration : 1 an."),
+          h("li", {}, "Repository access : Only select repositories → tournoi-hockey (et rien d'autre)."),
+          h("li", {}, "Permissions → Repository permissions → Contents : Read and write."),
+          h("li", {}, "Generate token, copie-le (il n'est affiché qu'une fois) et colle-le ici. Il te suit sur tous tes ordinateurs, une fois connecté avec Google.")))),
     user && h("div", { class: "item" }, h("span", { class: "meta" }, "Ton UID (à coller dans database.rules.json) :"), h("code", {}, user.uid)));
+}
+
+/* ---------- Apercus LIVE / NEXT (en haut des pages de glace) ---------- */
+// Conteneur persistant hors de #app : une iframe n'est rechargee que si son adresse change (pas a chaque point de score).
+const pv = { mode: "overlay", cells: {}, head: null };
+try { if (localStorage.getItem("tournoi-apercu") === "scorebird") pv.mode = "scorebird"; } catch { /* stockage indisponible : on continue sans */ }
+
+function initPreviews() {
+  const box = document.getElementById("previews");
+  pv.head = h("div", { class: "pv-head" });
+  box.append(pv.head);
+  for (const slot of ["live", "next"]) {
+    const iframe = h("iframe", { title: `Aperçu ${slot}`, tabindex: "-1", allow: "autoplay" });
+    const msg = h("div", { class: "pv-msg" });
+    const frame = h("div", { class: "pv-frame" }, iframe, msg);
+    // L'overlay est une page de 1920 x 1080 : on en montre le haut a gauche, mis a l'echelle de la largeur disponible
+    // (1100 px pour notre overlay, qui est un encadre en haut a gauche ; 1920 px pour la barre Scorebird).
+    const rescale = () => { iframe.style.transform = `scale(${frame.clientWidth / (pv.mode === "scorebird" ? 1920 : 1100)})`; };
+    new ResizeObserver(rescale).observe(frame);
+    box.append(h("div", {}, h("div", { class: "pv-label" }, slot === "live" ? "APERÇU · LIVE" : "APERÇU · NEXT"), frame));
+    pv.cells[slot] = { iframe, msg, rescale };
+  }
+}
+
+function setFrame(cell, url, message = "") {
+  if (cell.iframe.dataset.url !== url) { cell.iframe.dataset.url = url; cell.iframe.src = url; }
+  cell.msg.textContent = message;
+}
+
+function setPreviewMode(mode) {
+  pv.mode = mode;
+  try { localStorage.setItem("tournoi-apercu", mode); } catch { /* idem */ }
+  updatePreviews();
+}
+
+function updatePreviews() {
+  const box = document.getElementById("previews");
+  const g = tab === "glace1" ? 1 : tab === "glace2" ? 2 : null;
+  if (!g || !tid) { // hors des pages de glace : on libere les iframes (et leurs connexions Firebase)
+    box.hidden = true;
+    for (const c of Object.values(pv.cells)) setFrame(c, "about:blank");
+    return;
+  }
+  box.hidden = false;
+  box.dataset.mode = pv.mode;
+  Object.values(pv.cells).forEach((c) => c.rescale());
+  fill(pv.head, h("b", {}, "Aperçus"),
+    btn("Notre overlay", () => setPreviewMode("overlay"), pv.mode === "overlay" ? "on" : ""),
+    btn("Scorebird", () => setPreviewMode("scorebird"), pv.mode === "scorebird" ? "on" : ""));
+  const gl = pub.glaces?.[g] ?? {};
+  for (const slot of ["live", "next"]) {
+    const cell = pv.cells[slot];
+    const m = pub.matches?.[gl[slot]];
+    if (pv.mode === "overlay") setFrame(cell, new URL(`overlay.html?glace=${g}&mode=${slot}&tournoi=${tid}`, location.href).href, m ? "" : "Aucun match");
+    else if (!gl.scorebird) setFrame(cell, "about:blank", "Entre le numéro Scorebird de la glace (en haut à droite).");
+    else if (!m) setFrame(cell, "about:blank", "Aucun match");
+    else setFrame(cell, scorebirdUrl(gl.scorebird, m, pub.teams));
+  }
 }
 
 /* ---------- tournois : selection et abonnements ---------- */
@@ -820,6 +987,7 @@ function render() {
     legacyBanner(),
     tid && actif && tid !== actif && h("div", { class: "banner" }, `Ce tournoi n'est pas le tournoi actif : les overlays affichent « ${liste[actif]?.nom ?? "?"} ».`),
     views[tab]());
+  updatePreviews();
 }
 
 // Ne pas redessiner pendant qu'on tape dans un champ : on le fait en quittant le champ.
@@ -836,7 +1004,17 @@ onValue(ref(db, "public/lib"), (s) => { lib = s.val() ?? {}; refreshView(); rere
 onValue(ref(db, "public/actif"), (s) => { actif = s.val(); ensureSelection(); refreshView(); rerender(); }, failed);
 onValue(ref(db, "public/liste"), (s) => { liste = s.val() ?? {}; ensureSelection(); rerender(); }, failed);
 for (const k of ["teams", "sponsors", "matches", "glaces"]) onValue(ref(db, `public/${k}`), (s) => { legacy[k] = s.val(); rerender(); }, failed);
-onAuthStateChanged(auth, (u) => { user = u; subscribe(); rerender(); });
+let unsubGh = null;
+onAuthStateChanged(auth, (u) => {
+  user = u;
+  unsubGh?.();
+  unsubGh = null;
+  ghAjoute = null;
+  if (u) unsubGh = onValue(ref(db, "prive/githubAjoute"), (s) => { ghAjoute = s.val(); rerender(); }, () => { ghAjoute = null; });
+  subscribe();
+  rerender();
+});
+initPreviews();
 render();
 </script>
 </body>

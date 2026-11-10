@@ -18,7 +18,7 @@ Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://local
 
 - Chaque **tournoi** a ses propres équipes, commanditaires, matchs, notes et état de glaces. Le sélecteur en haut choisit le tournoi qu'on modifie ; **★ Définir comme actif** choisit celui que les overlays affichent (les URL d'overlay ne changent donc jamais).
 - L'**import crée les équipes dans le tournoi** (« Nouveau tournoi » ou le tournoi sélectionné) : rien n'est associé automatiquement à une équipe d'un autre tournoi, donc les Prédateurs régional et local restent séparés.
-- Deux **bibliothèques** communes (onglet Bibliothèque) : équipes et commanditaires. Dans les onglets Équipes et Commanditaires d'un tournoi, chaque élément affiche son état (« ✔ Associée à … » ou « Non associée »). **Choisir dans la bibliothèque…** ouvre une liste avec logos et recherche (les noms identiques d'abord, avec « même nom ») : **Utiliser** copie logo, couleurs et nom complet (le nom court du tournoi ne change pas). C'est une copie : modifier la bibliothèque plus tard ne change pas les anciens tournois ; pour reprendre une version à jour, on rechoisit la même équipe. **Enregistrer dans la bibliothèque** fait l'inverse (tournoi vers bibliothèque). **Dissocier** retire le lien sans rien effacer. « Associer les N équipes qui ont le même nom » propose le tout d'un coup, avec confirmation.
+- Deux **bibliothèques** communes (onglet Bibliothèque) : équipes et commanditaires. Une équipe de tournoi tient sur **une ligne** : logo (clic = galerie), nom court, deux couleurs, petit menu **Associer…** (la suggestion de même nom d'abord, puis la bibliothèque ; « — Dissocier » retire le lien), **⋯** (nom complet, « Reprendre la version de la bibliothèque », « Enregistrer dans la bibliothèque », image locale) et ✕. Associer **copie** logo, couleurs et nom complet (le nom court du tournoi ne change pas) : modifier la bibliothèque plus tard ne change pas les anciens tournois. « Associer les N équipes qui ont le même nom » propose le tout d'un coup, avec confirmation.
 - L'onglet **Tournois** liste tous les tournois : renommer, ouvrir, définir comme actif, supprimer (équipes, commanditaires, matchs et notes ; pas les bibliothèques).
 - **Sélection multiple** (cases + « Tout sélectionner ») pour supprimer des matchs (onglet Horaire), des équipes ou des commanditaires. Chaque suppression propose **Annuler** pendant 15 secondes (rétablit aussi les notes et le match affiché en direct). Le ✕ d'une équipe prévient si des matchs l'utilisent.
 - **Nettoyage** : « Fusionner les doublons » (équipes de même nom : on garde la plus complète, les matchs sont rebranchés) et « Supprimer les matchs en double » (même numéro : on garde celui qui a des pointages, un commanditaire ou qui est en direct).
@@ -26,9 +26,19 @@ Test en local : `python3 -m http.server 8080` dans ce dossier, puis http://local
 - Anciennes données (avant les tournois) : un bandeau propose de ranger les équipes et commanditaires dans les bibliothèques.
 - La sauvegarde télécharge tout (tournois, bibliothèques, notes privées).
 
+## Images : dossier graphiques/ et galerie
+
+Les logos, commanditaires et fonds sont dans `graphiques/` (`logos/`, `commanditaires/`, `divers/`), rapatriés de l'ancien dépôt `overlay` et allégés (400 px maximum, transparence conservée). Chaque image a une adresse publique `https://captimedia.github.io/tournoi-hockey/graphiques/…` : c'est ce qui sert à l'overlay, au dashboard et à Scorebird (qui ne reçoit que des adresses web).
+
+- **Galerie** : un clic sur le logo d'une ligne ouvre les images du dossier (même nom d'abord, recherche, « ↻ Actualiser »). Un clic sur une image remplit l'adresse. La liste vient de l'API publique de GitHub (60 lectures par heure par connexion internet : gardée 10 minutes en mémoire).
+- **Ajouter un logo** (dans la galerie) : l'image est réduite à 400 px puis publiée dans `graphiques/` avec un **nouveau nom** (ASCII, jamais celui d'un fichier existant, majuscules ignorées : on ne remplace jamais une image). Elle est visible environ une minute plus tard (publication GitHub Pages).
+- **Connexion GitHub** (onglet Sauvegarde) : jeton à créer une seule fois (GitHub → Settings → Developer settings → Fine-grained tokens ; dépôt `tournoi-hockey` seulement ; Contents : Read and write ; expiration). Il est rangé dans `secret/` (lisible et modifiable par ton compte seulement, exclu des sauvegardes) : il te suit sur tous tes ordinateurs une fois connecté avec Google. Boutons Tester et Retirer. Il n'apparaît dans aucun message.
+- Image locale (⋯) : stockée dans la base, fonctionne pour l'overlay mais pas pour Scorebird.
+- Les pages `captimedia.github.io` partagent toutes la même origine ; garder cela en tête avant d'héberger autre chose sous ce domaine.
+
 ## Une page par glace
 
-Les onglets **Glace 1** et **Glace 2** reprennent l'ancienne page `glace1.html` : match en cours et prochain match côte à côte (logos, pointages avec − / + ou saisie, couleurs Pri / Sec, commanditaire), Valider / Précédent / Suivant, puis l'horaire de la glace avec filtres et boutons « En cours » / « Prochain » par ligne.
+En haut, deux **aperçus LIVE et NEXT** (choix « Notre overlay » ou « Scorebird », mis à jour en direct sans se recharger à chaque point). Les onglets **Glace 1** et **Glace 2** reprennent l'ancienne page `glace1.html` : match en cours et prochain match côte à côte (logos, pointages avec − / + ou saisie, couleurs Pri / Sec, commanditaire), Valider / Précédent / Suivant, puis l'horaire de la glace avec filtres et boutons « En cours » / « Prochain » par ligne.
 
 Liens directs (à mettre en favori ou sur un Stream Deck) : `index.html?glace=1` et `index.html?glace=2`.
 

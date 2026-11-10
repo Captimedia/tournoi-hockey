@@ -7,6 +7,10 @@
     "prive": {
       ".read": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'",
       ".write": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'"
+    },
+    "secret": {
+      ".read": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'",
+      ".write": "auth.uid === '68XoA551M5RT6cJYzNC2JeVPJpN2'"
     }
   }
 }

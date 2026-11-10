@@ -475,3 +475,57 @@ export const restoreMatches = (ids, matches, glaces) => {
   for (const [g, v] of Object.entries(glaces ?? {})) for (const p of POINTERS) if (ids.has(v?.[p])) up[`glaces/${g}/${p}`] = v[p];
   return up;
 };
+
+/* ---------- Galerie d'images (dossier graphiques/) ---------- */
+
+const IMG_EXT = /\.(png|jpe?g|webp|gif|svg)$/i;
+
+// Arbre git (API GitHub) -> images d'un sous-dossier, avec leur adresse publique (encodee segment par segment : O'Dwyer.jpg).
+export const galleryItems = (tree, dossier, folder, base) =>
+  (tree ?? [])
+    .filter((x) => x.type === "blob" && x.path.startsWith(`${dossier}/${folder}/`) && IMG_EXT.test(x.path))
+    .map((x) => ({
+      name: x.path.split("/").pop(),
+      path: x.path,
+      url: base + x.path.slice(dossier.length + 1).split("/").map(encodeURIComponent).join("/"),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+// Classe les images : celles dont le nom ressemble au nom donne d'abord (egal, commence par, contient), puis l'ordre alphabetique.
+export const galleryRank = (items, nom) => {
+  const squash = (s) => normName(s).replace(/[^A-Z0-9]/g, "");
+  const k = squash(nom ?? "");
+  const score = (it) => {
+    const s = squash(it.name.replace(/\.[^.]+$/, ""));
+    if (!k || !s) return 0;
+    if (s === k) return 3;
+    if (s.startsWith(k) || k.startsWith(s)) return 2;
+    return s.includes(k) || k.includes(s) ? 1 : 0;
+  };
+  return [...items].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name)).map((it) => ({ ...it, match: score(it) > 0 }));
+};
+
+// Nom de fichier sur : ASCII, sans espaces, et JAMAIS un nom deja pris (comparaison sans tenir compte de la casse :
+// Predateurs.png et predateurs.png se melangent sur Mac) -> suffixe -2, -3... Un envoi ne remplace donc jamais un fichier.
+export const safeFileName = (base, ext, taken) => {
+  const stem = strip(base).replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "logo";
+  const used = new Set((taken ?? []).map((n) => n.toLowerCase()));
+  let name = `${stem}.${ext}`;
+  for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}-${i}.${ext}`;
+  return name;
+};
+
+// Requete de creation d'un fichier (API contents de GitHub). Pas de "sha" : si le fichier existe deja, GitHub refuse (422).
+export const contentsPut = (cfg, folder, name, base64) => ({
+  url: `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.dossier}/${folder}/${encodeURIComponent(name)}`,
+  body: { message: `logo: ${name}`, content: base64, branch: cfg.branch },
+});
+
+// Message lisible pour une erreur GitHub (jamais le jeton).
+export const githubError = (status) =>
+  ({
+    401: "Jeton refusé ou expiré : enregistre un nouveau jeton dans l'onglet Sauvegarde.",
+    403: "GitHub refuse : droits insuffisants (le jeton doit avoir « Contents : lecture et écriture » sur tournoi-hockey) ou trop de requêtes.",
+    404: "Dépôt introuvable ou jeton sans accès à tournoi-hockey.",
+    422: "Un fichier de ce nom existe déjà : réessaie.",
+  })[status] ?? `Erreur GitHub (${status}).`;

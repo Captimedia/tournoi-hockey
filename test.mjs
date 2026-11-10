@@ -365,4 +365,43 @@ const gl = { 1: { live: "m1", next: "m2" } };
 assert.deepEqual(deleteMatches(new Set(["m1"]), gl), { "matches/m1": null, "glaces/1/live": null });
 assert.deepEqual(restoreMatches(new Set(["m1"]), { m1: { num: 1 } }, gl), { "matches/m1": { num: 1 }, "glaces/1/live": "m1" });
 
+/* ---------- Galerie et envoi de logos ---------- */
+import { galleryItems, galleryRank, safeFileName, contentsPut, githubError } from "./logic.js";
+
+const tree = [
+  { path: "graphiques/logos/Express.png", type: "blob" }, { path: "graphiques/logos/PredateursForillon.png", type: "blob" },
+  { path: "graphiques/logos/Predateurs.png", type: "blob" }, { path: "graphiques/logos/predateurs_2.png", type: "blob" },
+  { path: "graphiques/logos", type: "tree" }, { path: "graphiques/logos/notes.md", type: "blob" },
+  { path: "graphiques/commanditaires/O'Dwyer.jpg", type: "blob" }, { path: "README.md", type: "blob" },
+];
+const gl2 = galleryItems(tree, "graphiques", "logos", "https://x.test/g/");
+assert.deepEqual(gl2.map((i) => i.name).sort(), ["Express.png", "Predateurs.png", "PredateursForillon.png", "predateurs_2.png"]); // images du dossier seulement
+assert.equal(gl2.find((i) => i.name === "Express.png").url, "https://x.test/g/logos/Express.png");
+assert.equal(galleryItems(tree, "graphiques", "commanditaires", "https://x.test/g/")[0].url, "https://x.test/g/commanditaires/O'Dwyer.jpg"); // l'apostrophe est valide dans une adresse
+assert.equal(galleryItems([{ path: "graphiques/logos/Mon logo é.png", type: "blob" }], "graphiques", "logos", "b/")[0].url, "b/logos/Mon%20logo%20%C3%A9.png"); // espaces et accents encodes
+assert.deepEqual(galleryItems(undefined, "graphiques", "logos", "b/"), []);
+// Classement : meme nom d'abord (accents et casse ignores), puis les noms qui commencent pareil.
+const rk = galleryRank(gl2, "PRÉDATEURS");
+assert.equal(rk[0].name, "Predateurs.png"); // nom identique d'abord
+assert.equal(rk[3].name, "Express.png"); // sans rapport : a la fin
+assert.deepEqual(rk.map((i) => i.match), [true, true, true, false]);
+assert.deepEqual(galleryRank(gl2, "").map((i) => i.match), [false, false, false, false]);
+
+// Un envoi ne remplace jamais un fichier : noms ASCII, collisions sans tenir compte de la casse.
+assert.equal(safeFileName("Prédateurs de Forillon", "png", []), "Predateurs-de-Forillon.png");
+assert.equal(safeFileName("Predateurs", "png", ["Predateurs.png", "predateurs_2.png"]), "Predateurs-2.png");
+assert.equal(safeFileName("predateurs", "png", ["Predateurs.png"]), "predateurs-2.png"); // casse differente = collision
+assert.equal(safeFileName("predateurs", "png", ["Predateurs.png", "predateurs-2.png"]), "predateurs-3.png");
+assert.equal(safeFileName("???", "png", []), "logo.png");
+const cfg = { owner: "O", repo: "R", branch: "main", dossier: "graphiques" };
+const rq = contentsPut(cfg, "logos", "O'Dwyer 1.png", "AAAA");
+assert.equal(rq.url, "https://api.github.com/repos/O/R/contents/graphiques/logos/O'Dwyer%201.png");
+assert.deepEqual(rq.body, { message: "logo: O'Dwyer 1.png", content: "AAAA", branch: "main" });
+assert.equal("sha" in rq.body, false); // jamais de remplacement
+assert.match(githubError(401), /expiré/);
+assert.match(githubError(403), /Contents/);
+assert.match(githubError(422), /existe déjà/);
+assert.equal(githubError(500), "Erreur GitHub (500).");
+for (const s of [401, 403, 404, 422, 500]) assert.equal(/github_pat|ghp_|Bearer/.test(githubError(s)), false); // jamais de jeton dans un message
+
 console.log("tous les tests passent");
